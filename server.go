@@ -231,13 +231,14 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 }
 
 func (srv *Server) ProcessEvent(evt []byte) ([]byte, error) {
+	log.Printf("Processing event: %v", string(evt))
 
 	idsAndScores, err := srv.Search(evt)
 	if err != nil {
 		return nil, fmt.Errorf("handle event failed: %v", err)
 	}
 
-	fmt.Printf("score %+v", idsAndScores)
+	fmt.Printf("score %+v\n", idsAndScores)
 
 	for routeCondId, score := range idsAndScores {
 		route := srv.GetRoute(routeCondId)

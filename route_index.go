@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/valyala/fastjson"
+	"log"
 )
 
 type Matcher struct {
@@ -52,6 +54,11 @@ func (idx *RouteIndex) Index(r *Route) {
 		node := idx.getNode(cond.Path)
 		node.Matchers = append(node.Matchers, m)
 	}
+	dump, err := json.Marshal(*idx.root)
+	if err != nil {
+		log.Fatalf("failed to dump index: %v", err)
+	}
+	log.Printf("Index updated: %s", string(dump))
 }
 
 func (idx *RouteIndex) Search(data []byte) (map[RouteConditionID]int, error) {

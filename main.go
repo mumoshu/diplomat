@@ -117,6 +117,23 @@ func main() {
 
 	sub2Id := "subscriber2-ws-" + xid.New().String()
 	srvRef := NewWsServerRef(realm, netAddr, wsPort)
+
+	intval2 := 2
+	cond2 := RouteCondition{
+		Expr{Path: []string{"foo", "id"}, Int: &intval2},
+	}
+	srv.AddConditionalRouteToProcedure(cond2)
+	log.Printf("Route added: %v", cond2)
+	route2 := srv.GetRoute(cond2)
+	srv.Index(route2)
+
+	srv2Done, err := Serve(srvRef, When("foo", "id").EqInt(2), func(evt []byte) ([]byte, error) {
+		return evt, nil
+	})
+	if err != nil {
+		log.Fatalf("Serve2 failed: %v", err)
+	}
+
 	subscriber2, err := srvRef.Connect(sub2Id)
 	err = subscriber2.Subscribe(topic1, createEvtHandler(sub2Id, topic1), nil)
 	if err != nil {
@@ -140,6 +157,9 @@ func main() {
 	case <-shutdown:
 	case <-srvDone:
 		log.Print("locallCalee: Router gone, exiting")
+		return // router gone, just exit
+	case <-srv2Done:
+		log.Print("locallCalee: Router2 gone, exiting")
 		return // router gone, just exit
 	case <-subscriber.Done():
 		log.Print("subscriber: Router gone, exiting")

@@ -50,13 +50,16 @@ func Serve(srv ServerRef, cond RouteCondition, f func(evt []byte) ([]byte, error
 	//call(locallCalee, "AddConditionalRouteToProcedure", )
 
 	localCalleeHandler := PrintBody(func(ctx context.Context, args wamp.List, kwargs wamp.Dict, details wamp.Dict) *client.InvokeResult {
-		bs, ok := kwargs["body"].([]byte)
-		if !ok {
-			return &client.InvokeResult{Err: wamp.ErrInvalidArgument}
+		bs, err := getBodyBytes(kwargs)
+		if err != nil {
+			log.Fatalf("Unexpected error: %v", err)
+		}
+		if err != nil {
+			return &client.InvokeResult{Err: wamp.ErrInvalidArgument, Kwargs: wamp.Dict{"message": fmt.Sprintf("Unexpected type: %T: %v", kwargs["body"], kwargs["body"])}}
 		}
 		data, err := f(bs)
 		if err != nil {
-			return &client.InvokeResult{Err: wamp.ErrInvalidArgument}
+			return &client.InvokeResult{Err: wamp.ErrInvalidArgument, Kwargs: wamp.Dict{"message": err.Error()}}
 		}
 		return progressiveSend(ctx, cli, data, args)
 	})
