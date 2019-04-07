@@ -11,6 +11,7 @@ import (
 	"github.com/gammazero/nexus/wamp"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -34,15 +35,29 @@ type Server struct {
 	realm   string
 	netAddr string
 	wsPort  int
+	httpPort int
 
 	nxr router.Router
+
+	caller *client.Client
 }
 
 func (s *Server) ListenAndServe() (io.Closer, error) {
 	var (
-		netAddr = "localhost"
-		wsPort  = 8000
+		netAddr  = s.netAddr
+		wsPort   = s.wsPort
+		httpPort = s.httpPort
 	)
+
+	if netAddr == "" {
+		netAddr = "0.0.0.0"
+	}
+	if wsPort == 0 {
+		wsPort = 8000
+	}
+	if httpPort == 0 {
+		httpPort = 9001
+	}
 
 	routerConfig := &router.Config{
 		RealmConfigs: []*router.RealmConfig{
@@ -87,24 +102,66 @@ func (s *Server) ListenAndServe() (io.Closer, error) {
 
 	log.Printf("Websocket server listening on ws://%s/", wsAddr)
 
+	httpHandler := s.CreateHttpHandler()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", httpHandler)
+	go func() {
+		httpAddr := fmt.Sprintf("%s:%d", netAddr, httpPort)
+		log.Printf("Http server listening on %s", httpAddr)
+		err := http.ListenAndServe(httpAddr, mux)
+		if err != nil {
+			log.Fatalf("error: %v", err)
+		}
+	}()
+
 	return wsCloser, nil
 }
 
-func (s *Server) localClient(name string) (*client.Client, error) {
-	logger := log.New(os.Stdout, fmt.Sprintf("%s> ", name), log.LstdFlags)
+type ServerRef interface {
+	Connect(name string) (*client.Client, error)
+}
+
+type RemoteServerRef struct {
+	Realm string
+	URL   string
+}
+
+func (s *Server) Connect(name string) (*client.Client, error) {
+	logger := log.New(os.Stdout, fmt.Sprintf("local %s> ", name), log.LstdFlags)
 	cfg := client.Config{
 		Realm:  s.realm,
 		Logger: logger,
 	}
-	callee, err := client.ConnectLocal(s.nxr, cfg)
+	c, err := client.ConnectLocal(s.nxr, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	return callee, nil
+	return c, nil
 }
 
-func call(caller *client.Client, procedureName string, body []byte, chunkSize int) ([]byte, error) {
+func NewWsServerRef(realm, host string, port int) *RemoteServerRef {
+	return &RemoteServerRef{
+		Realm: realm,
+		URL: fmt.Sprintf("ws://%s:%d", host, port),
+	}
+}
+
+func (s *RemoteServerRef) Connect(name string) (*client.Client, error) {
+	logger := log.New(os.Stdout, fmt.Sprintf("ws %s> ", name), log.LstdFlags)
+	cfg := client.Config{
+		Realm:  s.Realm,
+		Logger: logger,
+	}
+	c, err := client.ConnectNet(s.URL, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+func progressiveCall(caller *client.Client, procedureName string, evt []byte, chunkSize int) ([]byte, error) {
 	// The progress handler accumulates the chunks of data as they arrive.  It
 	// also progressively calculates a sha256 hash of the data as it arrives.
 	var chunks []string
@@ -123,7 +180,7 @@ func call(caller *client.Client, procedureName string, body []byte, chunkSize in
 	// Call the example procedure, specifying the size of chunks to send as
 	// progressive results.
 	result, err := caller.CallProgress(
-		ctx, procedureName, nil, wamp.List{chunkSize}, wamp.Dict{"body": body}, "", progHandler)
+		ctx, procedureName, nil, wamp.List{chunkSize}, wamp.Dict{"body": evt}, "", progHandler)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to call procedure:", err)
 	}
@@ -132,7 +189,7 @@ func call(caller *client.Client, procedureName string, body []byte, chunkSize in
 	// the data.  This is decoded and compared to the value that the caller
 	// calculated.  If they match, then the caller recieved the data correctly.
 	hashB64 := result.Arguments[0].(string)
-	log.Println("received hashB64: %s", hashB64)
+	log.Printf("Received hashB64: %s", hashB64)
 	calleeHash, err := base64.StdEncoding.DecodeString(hashB64)
 	if err != nil {
 		return nil, fmt.Errorf("decode error:", err)
@@ -148,4 +205,61 @@ func call(caller *client.Client, procedureName string, body []byte, chunkSize in
 	log.Println(res)
 
 	return []byte(res), nil
+}
+
+func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		bufbody := new(bytes.Buffer)
+		_, err := bufbody.ReadFrom(r.Body)
+		if err != nil {
+			log.Fatalf("unable to read body: %v", err)
+		}
+		evt := bufbody.Bytes()
+		res, err := srv.ProcessEvent(evt)
+		if err != nil {
+			log.Printf("http handler failed: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		log.Printf("handled http request: response = %s", string(res))
+
+		_, err = w.Write(res)
+		if err != nil {
+			panic(fmt.Errorf("unable to write: %v", err))
+		}
+	}
+}
+
+func (srv *Server) ProcessEvent(evt []byte) ([]byte, error) {
+
+	idsAndScores, err := srv.Search(evt)
+	if err != nil {
+		return nil, fmt.Errorf("handle event failed: %v", err)
+	}
+
+	fmt.Printf("score %+v", idsAndScores)
+
+	for routeCondId, score := range idsAndScores {
+		route := srv.GetRoute(routeCondId)
+		thres := len(route.RouteCondition)
+		if score < thres {
+			log.Fatalf("skipping route %s due to low score: needs %d, got %d", route.ID(), thres, score)
+		}
+		topics := route.Topics
+		procs := route.Procedures
+		for _, t := range topics {
+			if err := srv.caller.Publish(t, nil, wamp.List{}, wamp.Dict{"body": evt}); err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		if len(procs) > 1 {
+			log.Fatalf("too many procs: %d", len(procs))
+		}
+
+		for _, p := range procs {
+			return progressiveCall(srv.caller, p, evt, 64)
+		}
+	}
+	return []byte(`{"message":"no handler found"}`), nil
 }

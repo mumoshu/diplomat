@@ -10,7 +10,6 @@ require (
 	github.com/blevesearch/go-porterstemmer v1.0.2 // indirect
 	github.com/blevesearch/segment v0.0.0-20160915185041-762005e7a34f // indirect
 	github.com/boltdb/bolt v1.3.1 // indirect
-	github.com/codegangsta/cli v1.20.0 // indirect
 	github.com/couchbase/vellum v0.0.0-20190328134517-462e86d8716b // indirect
 	github.com/cznic/b v0.0.0-20181122101859-a26611c4d92d // indirect
 	github.com/cznic/mathutil v0.0.0-20181122101859-297441e03548 // indirect
@@ -27,7 +26,7 @@ require (
 	github.com/jmhodges/levigo v1.0.0 // indirect
 	github.com/minio/highwayhash v1.0.0
 	github.com/remyoudompheng/bigfft v0.0.0-20190321074620-2f0d2b0e0001 // indirect
-	github.com/sensiblecodeio/hookbot v0.0.0-20190403121531-934514a1b0fe
+	github.com/rs/xid v1.2.1
 	github.com/steveyen/gtreap v0.0.0-20150807155958-0abe01ef9be2 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	github.com/tecbot/gorocksdb v0.0.0-20181010114359-8752a9433481 // indirect

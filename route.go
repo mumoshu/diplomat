@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"github.com/minio/highwayhash"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +15,14 @@ type Expr struct {
 }
 
 type RouteCondition []Expr
+
+func (c RouteCondition) Topic() string {
+	return string("topic-" + c.ID())
+}
+
+func (c RouteCondition) Proc() string {
+	return string("proc-" + c.ID())
+}
 
 type Route struct {
 	RouteCondition
@@ -45,13 +55,25 @@ type RouteConditionRef interface {
 
 func (m RouteCondition) ID() RouteConditionID {
 	keys := []string{}
+	d := map[string]string{}
 	for _, c := range m {
-		for _, key := range c.Path {
-			keys = append(keys, key)
+		var v string
+		if c.String != nil {
+			v = *c.String
 		}
+		if c.Int != nil {
+			v = strconv.Itoa(*c.Int)
+		}
+		k := strings.Join(c.Path, ".")
+		d[k] = v
+		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	return RouteConditionID(strings.Join(keys, ""))
+	idparts := []string{}
+	for _, k := range keys {
+		idparts = append(idparts, fmt.Sprintf("%s=%s", k, d[k]))
+	}
+	return RouteConditionID(strings.Join(idparts, "&"))
 }
 
 func (m RouteCondition) HashValue() uint64 {

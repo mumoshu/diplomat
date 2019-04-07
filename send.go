@@ -9,17 +9,17 @@ import (
 	"github.com/gammazero/nexus/wamp"
 )
 
-// sendData sends the body of data in chunks of the requested size.  The final
+// progressiveSend sends the body of data in chunks of the requested size.  The final
 // result message contains the sha256 hash of the data to allow the caller to
 // verify that all the data was correctly received.
-func sendData(ctx context.Context, callee *client.Client, data string, args wamp.List) *client.InvokeResult {
+func progressiveSend(ctx context.Context, callee *client.Client, data []byte, args wamp.List) *client.InvokeResult {
 	// Compute the base64-encoded sha256 hash of the data.
 	h := sha256.New()
-	h.Write([]byte(data))
+	h.Write(data)
 	hash64 := base64.StdEncoding.EncodeToString(h.Sum(nil))
 
 	// Put data in buffer to read chunks from.
-	b := bytes.NewBuffer([]byte(data))
+	b := bytes.NewBuffer(data)
 
 	// Get chunksize requested by caller, use default if not set.
 	var chunkSize int

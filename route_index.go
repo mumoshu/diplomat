@@ -1,6 +1,9 @@
 package main
 
-import "github.com/valyala/fastjson"
+import (
+	"fmt"
+	"github.com/valyala/fastjson"
+)
 
 type Matcher struct {
 	String           *string
@@ -52,6 +55,9 @@ func (idx *RouteIndex) Index(r *Route) {
 }
 
 func (idx *RouteIndex) Search(data []byte) (map[RouteConditionID]int, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("search failed: empty body")
+	}
 	parser := idx.parserPool.Get()
 	defer idx.parserPool.Put(parser)
 	v, err := parser.ParseBytes(data)

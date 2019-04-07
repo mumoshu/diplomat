@@ -29,23 +29,27 @@ func (s *RouteTable) Put(r *Route) {
 	partition.Put(r)
 }
 
-func (s *RouteTable) RouteToTopic(c RouteCondition, topic string) {
+func (s *RouteTable) AddConditionalRouteToTopic(c RouteCondition) string {
 	topics, procs := s.Get(c)
+	topic := c.Topic()
 	topics = append(topics, topic)
 	s.Put(&Route{
 		RouteCondition: c,
 		Topics: topics,
 		Procedures: procs,
 	})
+	return topic
 }
 
-func (s *RouteTable) RouteToProcedure(c RouteCondition, proc string) {
+func (s *RouteTable) AddConditionalRouteToProcedure(c RouteCondition) string {
 	topics, procs := s.Get(c)
+	proc := c.Proc()
 	procs = append(procs, proc)
 	s.Put(&Route{
 		RouteCondition: c,
 		Topics: topics,
 		Procedures: procs,
 	})
+	return proc
 }
 
