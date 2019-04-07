@@ -81,6 +81,12 @@ func main() {
 		log.Fatalf("Connect failed: %v", err)
 	}
 
+	res, err := diplomat.ProgressiveCall(wscli, "/api/v1/register", map[string]interface{}{"proc": true}, 64)
+	if err != nil {
+		log.Fatalf("registration api call failed: %v", err)
+	}
+	log.Printf("res: %s", string(res))
+
 	srv2Done, err := diplomat.Serve(wscli, cond2, func(evt []byte) ([]byte, error) {
 		return evt, nil
 	})
@@ -95,11 +101,11 @@ func main() {
 	}
 	log.Printf("%s subscribed to %s", sub2Id, topic1)
 
-	res, err := srv.ProcessEvent(evt)
+	res1, err := srv.ProcessEvent(evt)
 	if err != nil {
 		log.Fatalf("err: %v", err)
 	}
-	log.Printf("ProcessEvent returned: %s", string(res))
+	log.Printf("ProcessEvent returned: %s", string(res1))
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
 	shutdown := make(chan os.Signal, 1)
