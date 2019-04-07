@@ -37,15 +37,10 @@ func (b CondBuilder) EqString(s string) RouteCondition {
 //}
 //
 
-func Serve(srv ServerRef, cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
+func Serve(cli *client.Client, cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
 	//proc1 := srv.AddConditionalRouteToProcedure(cond)
 
 	procName := cond.Proc()
-	clientName := procName
-	cli, err := srv.Connect(clientName)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	//call(locallCalee, "AddConditionalRouteToProcedure", )
 
@@ -84,7 +79,7 @@ func Serve(srv ServerRef, cond RouteCondition, f func(evt []byte) ([]byte, error
 		return &client.InvokeResult{Args: results}
 	}
 
-	if err = cli.Register(procName, localCalleeHandler, make(wamp.Dict)); err != nil {
+	if err := cli.Register(procName, localCalleeHandler, make(wamp.Dict)); err != nil {
 		return nil, fmt.Errorf("Failed to register %q: %s", procName, err)
 	}
 

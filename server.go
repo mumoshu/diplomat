@@ -39,7 +39,7 @@ type Server struct {
 
 	nxr router.Router
 
-	caller *client.Client
+	internalClient *client.Client
 }
 
 func (s *Server) ListenAndServe() (io.Closer, error) {
@@ -113,6 +113,13 @@ func (s *Server) ListenAndServe() (io.Closer, error) {
 			log.Fatalf("error: %v", err)
 		}
 	}()
+
+	localCallerConn, err := s.Connect("LOCAL_CLIENT")
+	if err != nil {
+		return nil, err
+	}
+
+	s.internalClient = localCallerConn
 
 	return wsCloser, nil
 }
@@ -261,7 +268,7 @@ func (srv *Server) ProcessEvent(evt []byte) ([]byte, error) {
 		topics := route.Topics
 		procs := route.Procedures
 		for _, t := range topics {
-			if err := srv.caller.Publish(t, nil, wamp.List{}, wamp.Dict{"body": evt}); err != nil {
+			if err := srv.internalClient.Publish(t, nil, wamp.List{}, wamp.Dict{"body": evt}); err != nil {
 				log.Fatal(err)
 			}
 		}
@@ -271,8 +278,12 @@ func (srv *Server) ProcessEvent(evt []byte) ([]byte, error) {
 		}
 
 		for _, p := range procs {
-			return progressiveCall(srv.caller, p, evt, 64)
+			return progressiveCall(srv.internalClient, p, evt, 64)
 		}
 	}
 	return []byte(`{"message":"no handler found"}`), nil
+}
+
+func (srv *Server) TestCall(procName string, evt []byte) ([]byte, error) {
+	return progressiveCall(srv.internalClient, procName, evt, 64)
 }

@@ -54,58 +54,22 @@ func main() {
 	topic1 := cond.Topic()
 	srv.Register(cond, true, true)
 
-	srvDone, err := Serve(srv, When("foo", "id").EqInt(1), func(evt []byte) ([]byte, error) {
+	clientName := proc1
+	localConn1, err := srv.Connect(clientName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	srvDone, err := Serve(localConn1, When("foo", "id").EqInt(1), func(evt []byte) ([]byte, error) {
 		return evt, nil
 	})
 	if err != nil {
 		log.Fatalf("Serve failed: %v", err)
 	}
 
-	//locallCalee, err := srv.Connect(proc1)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//localCalleeHandler := PrintBody(func(ctx context.Context, args wamp.List, kwargs wamp.Dict, details wamp.Dict) *client.InvokeResult {
-	//	return progressiveSend(ctx, locallCalee, gettysburg, args)
-	//})
-	//
-	//_ = func(ctx context.Context, args wamp.List, kwargs wamp.Dict, details wamp.Dict) *client.InvokeResult {
-	//	now := time.Now()
-	//	results := wamp.List{fmt.Sprintf("UTC: %s", now.UTC())}
-	//
-	//	for i := range args {
-	//		locName, ok := wamp.AsString(args[i])
-	//		if !ok {
-	//			continue
-	//		}
-	//		loc, err := time.LoadLocation(locName)
-	//		if err != nil {
-	//			results = append(results, fmt.Sprintf("%s: %s", locName, err))
-	//			continue
-	//		}
-	//		results = append(results, fmt.Sprintf("%s: %s", locName, now.In(loc)))
-	//	}
-	//
-	//	return &client.InvokeResult{Args: results}
-	//}
-	//
-	//if err = locallCalee.Register(proc1, localCalleeHandler, make(wamp.Dict)); err != nil {
-	//	log.Fatalf("Failed to register %q: %s", proc1, err)
-	//}
-	//log.Printf("Registered procedure %q with router", proc1)
-
-	// https://stackoverflow.com/questions/19992334/how-to-listen-to-n-channels-dynamic-select-statement
-
-	caller, err := srv.Connect("CALLER")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	srv.caller = caller
-
 	evt := []byte(`{"foo":{"id":1}}`)
 
-	progressiveCall(caller, proc1, evt, 64)
+	srv.TestCall(proc1, evt)
 
 	// Subscribe to topic.
 	sub1Id := "subscriber-local-" + xid.New().String()
@@ -119,14 +83,18 @@ func main() {
 	sub2Id := "subscriber2-ws-" + xid.New().String()
 	srvRef := NewWsServerRef(realm, netAddr, wsPort)
 
-	intval2 := 2
-	cond2 := RouteCondition{
-		Expr{Path: []string{"foo", "id"}, Int: &intval2},
-	}
+	// WebSocket
+
+	cond2 := When("foo", "id").EqInt(2)
 
 	srv.Register(cond2, true, false)
 
-	srv2Done, err := Serve(srvRef, When("foo", "id").EqInt(2), func(evt []byte) ([]byte, error) {
+	wscli, err := srvRef.Connect(cond2.Proc())
+	if err != nil {
+		log.Fatalf("Connect failed: %v", err)
+	}
+
+	srv2Done, err := Serve(wscli, cond2, func(evt []byte) ([]byte, error) {
 		return evt, nil
 	})
 	if err != nil {
