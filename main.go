@@ -50,8 +50,9 @@ func main() {
 	cond := RouteCondition{
 		Expr{Path: []string{"foo", "id"}, Int: &intval},
 	}
-	proc1 := srv.AddConditionalRouteToProcedure(cond)
-	topic1 := srv.AddConditionalRouteToTopic(cond)
+	proc1 := cond.Proc()
+	topic1 := cond.Topic()
+	srv.Register(cond, true, true)
 
 	srvDone, err := Serve(srv, When("foo", "id").EqInt(1), func(evt []byte) ([]byte, error) {
 		return evt, nil
@@ -122,10 +123,8 @@ func main() {
 	cond2 := RouteCondition{
 		Expr{Path: []string{"foo", "id"}, Int: &intval2},
 	}
-	srv.AddConditionalRouteToProcedure(cond2)
-	log.Printf("Route added: %v", cond2)
-	route2 := srv.GetRoute(cond2)
-	srv.Index(route2)
+
+	srv.Register(cond2, true, false)
 
 	srv2Done, err := Serve(srvRef, When("foo", "id").EqInt(2), func(evt []byte) ([]byte, error) {
 		return evt, nil
@@ -140,9 +139,6 @@ func main() {
 		log.Fatal("subscribe error:", err)
 	}
 	log.Printf("%s subscribed to %s", sub2Id, topic1)
-
-	route := srv.GetRoute(cond)
-	srv.Index(route)
 
 	res, err := srv.ProcessEvent(evt)
 	if err != nil {

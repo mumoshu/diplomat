@@ -140,6 +140,18 @@ func (s *Server) Connect(name string) (*client.Client, error) {
 	return c, nil
 }
 
+func (srv *Server) Register(cond RouteCondition, proc, topic bool) {
+	if proc {
+		srv.AddConditionalRouteToProcedure(cond)
+	}
+	if topic {
+		srv.AddConditionalRouteToTopic(cond)
+	}
+	log.Printf("Route added: %v", cond)
+	route := srv.GetRoute(cond)
+	srv.Index(route)
+}
+
 func NewWsServerRef(realm, host string, port int) *RemoteServerRef {
 	return &RemoteServerRef{
 		Realm: realm,
