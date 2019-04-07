@@ -3,7 +3,31 @@ package main
 import (
 	"fmt"
 	"github.com/blevesearch/bleve"
+	"sort"
 )
+
+type Query struct {
+	Data map[string]string
+}
+
+func (q Query) String() string {
+	keys := make([]string, len(q.Data))
+	i := 0
+	for k := range q.Data {
+		keys[i] = k
+		i ++
+	}
+	sort.Strings(keys)
+	s := ""
+	for i := range keys {
+		if s != "" {
+			s += " "
+		}
+		k := keys[i]
+		s += "+" + k + ":" + q.Data[k]
+	}
+	return s
+}
 
 func index1(data map[string]string) error {
 	q := Query{data}

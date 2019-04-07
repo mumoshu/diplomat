@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sort"
 )
 
 var key []byte
@@ -142,27 +141,4 @@ func main() {
 	log.Fatal("Server is existing cleanly")
 
 	// Servers close at exit due to defer calls.
-}
-
-type Query struct {
-	Data map[string]string
-}
-
-func (q Query) String() string {
-	keys := make([]string, len(q.Data))
-	i := 0
-	for k := range q.Data {
-		keys[i] = k
-		i ++
-	}
-	sort.Strings(keys)
-	s := ""
-	for i := range keys {
-		if s != "" {
-			s += " "
-		}
-		k := keys[i]
-		s += "+" + k + ":" + q.Data[k]
-	}
-	return s
 }
