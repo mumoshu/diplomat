@@ -1,4 +1,4 @@
-package main
+package diplomat
 
 import (
 	"context"

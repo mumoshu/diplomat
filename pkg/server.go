@@ -1,4 +1,4 @@
-package main
+package diplomat
 
 import (
 	"bytes"
@@ -32,10 +32,10 @@ type Server struct {
 	*RouteTable
 	*RouteIndex
 
-	realm   string
-	netAddr string
-	wsPort  int
-	httpPort int
+	Realm    string
+	NetAddr  string
+	WsPort   int
+	HttpPort int
 
 	nxr router.Router
 
@@ -44,9 +44,9 @@ type Server struct {
 
 func (s *Server) ListenAndServe() (io.Closer, error) {
 	var (
-		netAddr  = s.netAddr
-		wsPort   = s.wsPort
-		httpPort = s.httpPort
+		netAddr  = s.NetAddr
+		wsPort   = s.WsPort
+		httpPort = s.HttpPort
 	)
 
 	if netAddr == "" {
@@ -62,7 +62,7 @@ func (s *Server) ListenAndServe() (io.Closer, error) {
 	routerConfig := &router.Config{
 		RealmConfigs: []*router.RealmConfig{
 			&router.RealmConfig{
-				URI:           wamp.URI(s.realm),
+				URI:           wamp.URI(s.Realm),
 				AnonymousAuth: true,
 				AllowDisclose: true,
 			},
@@ -136,7 +136,7 @@ type RemoteServerRef struct {
 func (s *Server) Connect(name string) (*client.Client, error) {
 	logger := log.New(os.Stdout, fmt.Sprintf("local %s> ", name), log.LstdFlags)
 	cfg := client.Config{
-		Realm:  s.realm,
+		Realm:  s.Realm,
 		Logger: logger,
 	}
 	c, err := client.ConnectLocal(s.nxr, cfg)

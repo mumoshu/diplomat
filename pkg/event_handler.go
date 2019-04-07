@@ -1,4 +1,4 @@
-package main
+package diplomat
 
 import (
 	"encoding/base64"
@@ -24,7 +24,7 @@ func getBodyBytes(kwargs wamp.Dict) ([]byte, error) {
 	return bs, nil
 }
 
-func createEvtHandler(subId, topic string) func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+func CreateEvtHandler(subId, topic string) func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 	return func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		log.Println("Subscriber", subId, "received ", topic, "event")
 		if len(args) != 0 {

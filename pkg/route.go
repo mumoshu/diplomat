@@ -1,12 +1,24 @@
-package main
+package diplomat
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/minio/highwayhash"
 	"sort"
 	"strconv"
 	"strings"
 )
+
+var key []byte
+
+func init() {
+	var err error
+	key, err = hex.DecodeString("000102030405060708090A0B0C0D0E0FF0E0D0C0B0A090807060504030201000") // use your own key here
+	if err != nil {
+		fmt.Printf("Cannot decode hex key: %v", err) // add error handling
+		return
+	}
+}
 
 type Expr struct {
 	Path   []string

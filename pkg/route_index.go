@@ -1,4 +1,4 @@
-package main
+package diplomat
 
 import (
 	"encoding/json"
@@ -22,7 +22,7 @@ type Node struct {
 type RouteIndex struct {
 	parserPool fastjson.ParserPool
 
-	root *Node
+	Root *Node
 }
 
 func newNode() *Node {
@@ -33,7 +33,7 @@ func newNode() *Node {
 }
 
 func (idx *RouteIndex) getNode(path []string) *Node {
-	node := idx.root
+	node := idx.Root
 	for _, k := range path {
 		if node.Children[k] == nil {
 			node.Children[k] = newNode()
@@ -54,7 +54,7 @@ func (idx *RouteIndex) Index(r *Route) {
 		node := idx.getNode(cond.Path)
 		node.Matchers = append(node.Matchers, m)
 	}
-	dump, err := json.Marshal(*idx.root)
+	dump, err := json.Marshal(*idx.Root)
 	if err != nil {
 		log.Fatalf("failed to dump index: %v", err)
 	}
@@ -71,7 +71,7 @@ func (idx *RouteIndex) Search(data []byte) (map[RouteConditionID]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	return idx.root.search(&SearchContext{map[RouteConditionID]int{}}, v)
+	return idx.Root.search(&SearchContext{map[RouteConditionID]int{}}, v)
 }
 
 type SearchContext struct {

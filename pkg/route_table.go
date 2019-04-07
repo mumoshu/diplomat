@@ -1,4 +1,4 @@
-package main
+package diplomat
 
 func (s *RouteTable) GetRoute(ref RouteConditionRef) *Route {
 	partition, ok := s.RoutePartitions[ref.HashValue()]

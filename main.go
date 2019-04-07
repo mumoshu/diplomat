@@ -1,42 +1,30 @@
 package main
 
 import (
-	"encoding/hex"
-	"fmt"
+	"github.com/mumoshu/diplomat/pkg"
 	"github.com/rs/xid"
 	"log"
 	"os"
 	"os/signal"
 )
 
-var key []byte
-
-func init() {
-	var err error
-	key, err = hex.DecodeString("000102030405060708090A0B0C0D0E0FF0E0D0C0B0A090807060504030201000") // use your own key here
-	if err != nil {
-		fmt.Printf("Cannot decode hex key: %v", err) // add error handling
-		return
-	}
-}
-
 func main() {
 	realm := "channel1"
 	netAddr := "0.0.0.0"
 	wsPort := 8000
-	srv := &Server{
-		RouteTable: &RouteTable{
-			RoutePartitions: map[uint64]*RoutesPartition{},
+	srv := &diplomat.Server{
+		RouteTable: &diplomat.RouteTable{
+			RoutePartitions: map[uint64]*diplomat.RoutesPartition{},
 		},
-		RouteIndex: &RouteIndex{
-			root: &Node{
-				Matchers: []*Matcher{},
-				Children: map[string]*Node{},
+		RouteIndex: &diplomat.RouteIndex{
+			Root: &diplomat.Node{
+				Matchers: []*diplomat.Matcher{},
+				Children: map[string]*diplomat.Node{},
 			},
 		},
-		realm:   realm,
-		netAddr: netAddr,
-		wsPort:  wsPort,
+		Realm:   realm,
+		NetAddr: netAddr,
+		WsPort:  wsPort,
 	}
 
 	srvCloser, err := srv.ListenAndServe()
@@ -46,8 +34,8 @@ func main() {
 	defer srvCloser.Close()
 
 	intval := 1
-	cond := RouteCondition{
-		Expr{Path: []string{"foo", "id"}, Int: &intval},
+	cond := diplomat.RouteCondition{
+		diplomat.Expr{Path: []string{"foo", "id"}, Int: &intval},
 	}
 	proc1 := cond.Proc()
 	topic1 := cond.Topic()
@@ -59,7 +47,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	srvDone, err := Serve(localConn1, When("foo", "id").EqInt(1), func(evt []byte) ([]byte, error) {
+	srvDone, err := diplomat.Serve(localConn1, diplomat.When("foo", "id").EqInt(1), func(evt []byte) ([]byte, error) {
 		return evt, nil
 	})
 	if err != nil {
@@ -73,18 +61,18 @@ func main() {
 	// Subscribe to topic.
 	sub1Id := "subscriber-local-" + xid.New().String()
 	subscriber, err := srv.Connect(sub1Id)
-	err = subscriber.Subscribe(topic1, createEvtHandler(sub1Id, topic1), nil)
+	err = subscriber.Subscribe(topic1, diplomat.CreateEvtHandler(sub1Id, topic1), nil)
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
 	log.Printf("%s subscribed to %s", sub1Id, topic1)
 
 	sub2Id := "subscriber2-ws-" + xid.New().String()
-	srvRef := NewWsServerRef(realm, netAddr, wsPort)
+	srvRef := diplomat.NewWsServerRef(realm, netAddr, wsPort)
 
 	// WebSocket
 
-	cond2 := When("foo", "id").EqInt(2)
+	cond2 := diplomat.When("foo", "id").EqInt(2)
 
 	srv.Register(cond2, true, false)
 
@@ -93,7 +81,7 @@ func main() {
 		log.Fatalf("Connect failed: %v", err)
 	}
 
-	srv2Done, err := Serve(wscli, cond2, func(evt []byte) ([]byte, error) {
+	srv2Done, err := diplomat.Serve(wscli, cond2, func(evt []byte) ([]byte, error) {
 		return evt, nil
 	})
 	if err != nil {
@@ -101,7 +89,7 @@ func main() {
 	}
 
 	subscriber2, err := srvRef.Connect(sub2Id)
-	err = subscriber2.Subscribe(topic1, createEvtHandler(sub2Id, topic1), nil)
+	err = subscriber2.Subscribe(topic1, diplomat.CreateEvtHandler(sub2Id, topic1), nil)
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
