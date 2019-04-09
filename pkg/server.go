@@ -35,7 +35,7 @@ type Server struct {
 
 	nxr router.Router
 
-	internalClient *client.Client
+	internalClient *Client
 }
 
 func (s *Server) ListenAndServe() (io.Closer, error) {
@@ -129,7 +129,13 @@ type RemoteServerRef struct {
 	URL   string
 }
 
-func (s *Server) Connect(name string) (*client.Client, error) {
+type Registration struct {
+	RouteCondition
+	Proc bool
+	Topic bool
+}
+
+func (s *Server) Connect(name string) (*Client, error) {
 	logger := log.New(os.Stdout, fmt.Sprintf("local %s> ", name), log.LstdFlags)
 	cfg := client.Config{
 		Realm:  s.Realm,
@@ -140,18 +146,18 @@ func (s *Server) Connect(name string) (*client.Client, error) {
 		return nil, err
 	}
 
-	return c, nil
+	return &Client{c}, nil
 }
 
-func (srv *Server) Register(cond RouteCondition, proc, topic bool) {
-	if proc {
-		srv.AddConditionalRouteToProcedure(cond)
+func (srv *Server) Register(reg Registration) {
+	if reg.Proc {
+		srv.AddConditionalRouteToProcedure(reg.RouteCondition)
 	}
-	if topic {
-		srv.AddConditionalRouteToTopic(cond)
+	if reg.Topic {
+		srv.AddConditionalRouteToTopic(reg.RouteCondition)
 	}
-	log.Printf("Route added: %v", cond)
-	route := srv.GetRoute(cond)
+	log.Printf("Route added: %v", reg.RouteCondition)
+	route := srv.GetRoute(reg.RouteCondition)
 	srv.Index(route)
 }
 
@@ -162,7 +168,7 @@ func NewWsServerRef(realm, host string, port int) *RemoteServerRef {
 	}
 }
 
-func (s *RemoteServerRef) Connect(name string) (*client.Client, error) {
+func (s *RemoteServerRef) Connect(name string) (*Client, error) {
 	logger := log.New(os.Stdout, fmt.Sprintf("ws %s> ", name), log.LstdFlags)
 	cfg := client.Config{
 		Realm:  s.Realm,
@@ -173,7 +179,7 @@ func (s *RemoteServerRef) Connect(name string) (*client.Client, error) {
 		return nil, err
 	}
 
-	return c, nil
+	return &Client{c}, nil
 }
 
 func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) {
@@ -202,7 +208,7 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 func (srv *Server) ProcessEvent(evt []byte) ([]byte, error) {
 	log.Printf("Processing event: %v", string(evt))
 
-	idsAndScores, err := srv.Search(evt)
+	idsAndScores, err := srv.SearchRouteMatchesJSON(evt)
 	if err != nil {
 		return nil, fmt.Errorf("handle event failed: %v", err)
 	}
@@ -228,12 +234,12 @@ func (srv *Server) ProcessEvent(evt []byte) ([]byte, error) {
 		}
 
 		for _, p := range procs {
-			return ProgressiveCall(srv.internalClient, p, evt, 64)
+			return ProgressiveCall(srv.internalClient.Client, p, evt, 64)
 		}
 	}
 	return []byte(`{"message":"no handler found"}`), nil
 }
 
 func (srv *Server) TestCall(procName string, evt []byte) ([]byte, error) {
-	return ProgressiveCall(srv.internalClient, procName, evt, 64)
+	return ProgressiveCall(srv.internalClient.Client, procName, evt, 64)
 }

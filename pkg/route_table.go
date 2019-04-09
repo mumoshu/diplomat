@@ -31,7 +31,7 @@ func (s *RouteTable) Put(r *Route) {
 
 func (s *RouteTable) AddConditionalRouteToTopic(c RouteCondition) string {
 	topics, procs := s.Get(c)
-	topic := c.Topic()
+	topic := c.TopicName()
 	topics = append(topics, topic)
 	s.Put(&Route{
 		RouteCondition: c,
@@ -43,7 +43,7 @@ func (s *RouteTable) AddConditionalRouteToTopic(c RouteCondition) string {
 
 func (s *RouteTable) AddConditionalRouteToProcedure(c RouteCondition) string {
 	topics, procs := s.Get(c)
-	proc := c.Proc()
+	proc := c.ProcedureName()
 	procs = append(procs, proc)
 	s.Put(&Route{
 		RouteCondition: c,

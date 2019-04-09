@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
+	"github.com/mumoshu/diplomat/pkg/api"
 	"log"
 	"strings"
 )
@@ -76,4 +77,22 @@ func progressiveCall(caller *client.Client, procedureName string, evt []byte, ch
 	log.Println(res)
 
 	return []byte(res), nil
+}
+
+func Call(caller *client.Client, ch api.ChannelRef, evt interface{}) (interface{}, error) {
+	return call(caller, ch.String(), evt)
+}
+
+func call(caller *client.Client, procedureName string, evt interface{}) (interface{}, error) {
+	ctx := context.Background()
+
+	// Call the example procedure, specifying the size of chunks to send as
+	// progressive results.
+	result, err := caller.Call(
+		ctx, procedureName, nil, wamp.List{evt}, wamp.Dict{}, "")
+	if err != nil {
+		return nil, fmt.Errorf("Failed to call procedure:", err)
+	}
+
+	return result.Arguments[0], nil
 }

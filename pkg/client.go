@@ -5,30 +5,59 @@ import (
 	"fmt"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
+	"github.com/mumoshu/diplomat/pkg/api"
 	"log"
 	"time"
 )
 
 type CondBuilder struct {
+	Channel api.ChannelRef
 	Path []string
 }
 
-func When(path ...string) CondBuilder {
+func On(ch api.ChannelRef) CondBuilder {
 	return CondBuilder{
-		Path: path,
+		Channel: ch,
 	}
+}
+
+func (b CondBuilder) All() RouteCondition {
+	return RouteCondition{
+		Channel: b.Channel,
+	}
+}
+
+func (b CondBuilder) Where(path ...string) CondBuilder {
+	b.Path = path
+	return b
 }
 
 func (b CondBuilder) EqInt(v int) RouteCondition {
-	return RouteCondition{
-		Expr{Path: b.Path, Int: &v},
+	c := RouteCondition{
+		Channel: b.Channel,
 	}
+	if b.Path != nil {
+		c.Expressions = []Expr{{Path: b.Path, Int: &v}}
+	} else {
+		c.Expressions = []Expr{}
+	}
+	return c
 }
 
 func (b CondBuilder) EqString(s string) RouteCondition {
-	return RouteCondition{
-		Expr{Path: b.Path, String: &s},
+	c := RouteCondition{
+		Channel: b.Channel,
 	}
+	if b.Path != nil {
+		c.Expressions = []Expr{{Path: b.Path, String: &s}}
+	} else {
+		c.Expressions = []Expr{}
+	}
+	return c
+}
+
+type Client struct {
+	*client.Client
 }
 
 //func Serve(srv *Server, cond RouteCondition, func(evt []byte) ([]byte, error) {
@@ -37,10 +66,42 @@ func (b CondBuilder) EqString(s string) RouteCondition {
 //}
 //
 
-func Serve(cli *client.Client, cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
+func (c *Client) ApplyRegistration(reg Registration) error {
+	_, err := Call(c.Client, api.DiplomatRegisterChan, reg)
+	if err != nil {
+		return fmt.Errorf("registration failed: %v", err)
+	}
+	return nil
+}
+
+func (c *Client) Serve(ch RouteCondition, f func(in interface{}) (interface{}, error)) error {
+	cli := c.Client
+	handler := c.FuncHandler(f)
+	if err := cli.Register(ch.ProcedureName(), handler, make(wamp.Dict)); err != nil {
+		return fmt.Errorf("Failed to register %q: %s", ch, err)
+	}
+
+	log.Printf("Registered procedure %q with router", ch)
+	return nil
+}
+
+func (c *Client) FuncHandler(f func(in interface{}) (interface{}, error)) func(context.Context, wamp.List, wamp.Dict, wamp.Dict) *client.InvokeResult {
+	return func(ctx context.Context, args wamp.List, kwargs wamp.Dict, details wamp.Dict) *client.InvokeResult {
+		req := args[0]
+		res, err := f(req)
+		if err != nil {
+			return &client.InvokeResult{Err: wamp.ErrInvalidArgument, Kwargs: wamp.Dict{"message": fmt.Sprintf("unexpected error: %v", err)}}
+		}
+		return &client.InvokeResult{Args: wamp.List{res}}
+	}
+}
+
+func (c *Client) ListenAndServeWithProgress(cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
 	//proc1 := srv.AddConditionalRouteToProcedure(cond)
 
-	procName := cond.Proc()
+	procName := cond.ProcedureName()
+
+	cli := c.Client
 
 	//call(locallCalee, "AddConditionalRouteToProcedure", )
 

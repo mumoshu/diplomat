@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/minio/highwayhash"
+	"github.com/mumoshu/diplomat/pkg/api"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,13 +27,16 @@ type Expr struct {
 	Int *int
 }
 
-type RouteCondition []Expr
+type RouteCondition struct {
+	Channel api.ChannelRef
+	Expressions []Expr
+}
 
-func (c RouteCondition) Topic() string {
+func (c RouteCondition) TopicName() string {
 	return string("topic-" + c.ID())
 }
 
-func (c RouteCondition) Proc() string {
+func (c RouteCondition) ProcedureName() string {
 	return string("proc-" + c.ID())
 }
 
@@ -68,7 +72,7 @@ type RouteConditionRef interface {
 func (m RouteCondition) ID() RouteConditionID {
 	keys := []string{}
 	d := map[string]string{}
-	for _, c := range m {
+	for _, c := range m.Expressions {
 		var v string
 		if c.String != nil {
 			v = *c.String
@@ -85,7 +89,9 @@ func (m RouteCondition) ID() RouteConditionID {
 	for _, k := range keys {
 		idparts = append(idparts, fmt.Sprintf("%s=%s", k, d[k]))
 	}
-	return RouteConditionID(strings.Join(idparts, "&"))
+	query := strings.Join(idparts, "&")
+	id := strings.Join([]string{m.Channel.String(), query}, "?")
+	return RouteConditionID(id)
 }
 
 func (m RouteCondition) HashValue() uint64 {

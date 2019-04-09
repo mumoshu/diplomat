@@ -44,7 +44,7 @@ func (idx *RouteIndex) getNode(path []string) *Node {
 }
 
 func (idx *RouteIndex) Index(r *Route) {
-	for _, cond := range r.RouteCondition {
+	for _, cond := range r.RouteCondition.Expressions {
 		id := r.ID()
 		m := &Matcher{
 			String:           cond.String,
@@ -61,17 +61,17 @@ func (idx *RouteIndex) Index(r *Route) {
 	log.Printf("Index updated: %s", string(dump))
 }
 
-func (idx *RouteIndex) Search(data []byte) (map[RouteConditionID]int, error) {
+func (idx *RouteIndex) SearchRouteMatchesJSON(data []byte) (map[RouteConditionID]int, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("search failed: empty body")
 	}
 	parser := idx.parserPool.Get()
 	defer idx.parserPool.Put(parser)
-	v, err := parser.ParseBytes(data)
+	jsonValue, err := parser.ParseBytes(data)
 	if err != nil {
 		return nil, err
 	}
-	return idx.Root.search(&SearchContext{map[RouteConditionID]int{}}, v)
+	return idx.Root.search(&SearchContext{map[RouteConditionID]int{}}, jsonValue)
 }
 
 type SearchContext struct {

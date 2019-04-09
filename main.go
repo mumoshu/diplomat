@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"github.com/mumoshu/diplomat/pkg"
+	"github.com/mumoshu/diplomat/pkg/api"
 	"github.com/rs/xid"
 	"log"
 	"os"
@@ -34,20 +36,45 @@ func main() {
 	defer srvCloser.Close()
 
 	intval := 1
-	cond := diplomat.RouteCondition{
-		diplomat.Expr{Path: []string{"foo", "id"}, Int: &intval},
-	}
-	proc1 := cond.Proc()
-	topic1 := cond.Topic()
-	srv.Register(cond, true, true)
+	//echoFooBar1Cond := diplomat.RouteCondition{
+	//	Channel: api.DiplomatEchoChan,
+	//	Expressions: []diplomat.Expr{
+	//		{Path: []string{"foo", "id"}, Int: &intval},
+	//	},
+	//}
+	echoFooBar1Cond := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(1)
+	echoFooBar1Proc := echoFooBar1Cond.ProcedureName()
+	echoFooBar1Topic := echoFooBar1Cond.TopicName()
+	//srv.Register(cond, true, true)
 
-	clientName := proc1
+	clientName := echoFooBar1Proc
 	localConn1, err := srv.Connect(clientName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	srvDone, err := diplomat.Serve(localConn1, diplomat.When("foo", "id").EqInt(1), func(evt []byte) ([]byte, error) {
+	// Registration Server
+
+	ResponseOK := "OK"
+	if err := localConn1.Serve(diplomat.On(api.DiplomatRegisterChan).All(), func(in interface{}) (interface{}, error) {
+		reg, ok := in.(diplomat.Registration)
+		if !ok {
+			return nil, fmt.Errorf("unexpected type of input %T: %v", in, in)
+		}
+		srv.Register(reg)
+		return ResponseOK, err
+	}); err != nil {
+		log.Fatal(err)
+	}
+
+	reg := diplomat.Registration{RouteCondition: echoFooBar1Cond, Proc: true, Topic: true,}
+	if err := localConn1.ApplyRegistration(reg); err != nil {
+		log.Fatal(err)
+	}
+
+	// Echo Server
+
+	srvDone, err := localConn1.ListenAndServeWithProgress(echoFooBar1Cond, func(evt []byte) ([]byte, error) {
 		return evt, nil
 	})
 	if err != nil {
@@ -56,23 +83,23 @@ func main() {
 
 	evt := []byte(`{"foo":{"id":1}}`)
 
-	srv.TestCall(proc1, evt)
+	srv.TestCall(echoFooBar1Proc, evt)
 
 	// Subscribe to topic.
 	sub1Id := "subscriber-local-" + xid.New().String()
 	subscriber, err := srv.Connect(sub1Id)
-	err = subscriber.Subscribe(topic1, diplomat.CreateEvtHandler(sub1Id, topic1), nil)
+	err = subscriber.Subscribe(echoFooBar1Topic, diplomat.CreateEvtHandler(sub1Id, echoFooBar1Topic), nil)
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
-	log.Printf("%s subscribed to %s", sub1Id, topic1)
+	log.Printf("%s subscribed to %s", sub1Id, echoFooBar1Topic)
 
 	sub2Id := "subscriber2-ws-" + xid.New().String()
 	srvRef := diplomat.NewWsServerRef(realm, netAddr, wsPort)
 
 	// WebSocket
 
-	cond2 := diplomat.When("foo", "id").EqInt(2)
+	cond2 := diplomat.Where("foo", "id").EqInt(2)
 
 	srv.Register(cond2, true, false)
 
@@ -95,11 +122,11 @@ func main() {
 	}
 
 	subscriber2, err := srvRef.Connect(sub2Id)
-	err = subscriber2.Subscribe(topic1, diplomat.CreateEvtHandler(sub2Id, topic1), nil)
+	err = subscriber2.Subscribe(echoFooBar1Topic, diplomat.CreateEvtHandler(sub2Id, echoFooBar1Topic), nil)
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
-	log.Printf("%s subscribed to %s", sub2Id, topic1)
+	log.Printf("%s subscribed to %s", sub2Id, echoFooBar1Topic)
 
 	res1, err := srv.ProcessEvent(evt)
 	if err != nil {
@@ -128,7 +155,7 @@ func main() {
 	//}
 
 	// Unsubscribe from topic.
-	if err = subscriber.Unsubscribe(topic1); err != nil {
+	if err = subscriber.Unsubscribe(echoFooBar1Topic); err != nil {
 		log.Fatal("Failed to unsubscribe:", err)
 	}
 
