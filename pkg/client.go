@@ -83,7 +83,7 @@ func (c *Client) Serve(cond RouteCondition, f func(in interface{}) (interface{},
 
 func (c *Client) serve(cond RouteCondition, f func(in interface{}) (interface{}, error)) error {
 	cli := c.Client
-	handler := c.FuncHandler(f)
+	handler := c.FuncProcHandler(f)
 	ch := cond.Channel
 	proc := cond.ReceiverName()
 	if err := cli.Register(proc, handler, make(wamp.Dict)); err != nil {
@@ -94,7 +94,7 @@ func (c *Client) serve(cond RouteCondition, f func(in interface{}) (interface{},
 	return nil
 }
 
-func (c *Client) FuncHandler(f func(in interface{}) (interface{}, error)) func(context.Context, wamp.List, wamp.Dict, wamp.Dict) *client.InvokeResult {
+func (c *Client) FuncProcHandler(f func(in interface{}) (interface{}, error)) func(context.Context, wamp.List, wamp.Dict, wamp.Dict) *client.InvokeResult {
 	return func(ctx context.Context, args wamp.List, kwargs wamp.Dict, details wamp.Dict) *client.InvokeResult {
 		req := args[0]
 		res, err := f(req)
@@ -105,13 +105,38 @@ func (c *Client) FuncHandler(f func(in interface{}) (interface{}, error)) func(c
 	}
 }
 
-func (c *Client) ListenAndServeWithProgress(cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
+func (c *Client) FuncSubHandler(f func(in interface{})) client.EventHandler {
+	return func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+		req := kwargs["body"]
+		f(req)
+	}
+}
+
+func (c *Client) ServeWithProgress(cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
 	reg := Registration{RouteCondition: cond, Proc: true, Topic: false,}
 	if err := c.Register(reg); err != nil {
 		log.Fatalf("registration failed 1: %v", err)
 	}
 
 	return c.listenAndServeWithProgress(cond, f)
+}
+
+func (c *Client) Subscribe(cond RouteCondition, f func(evt interface{})) error {
+	reg := Registration{RouteCondition: cond, Proc: false, Topic: true,}
+	if err := c.Register(reg); err != nil {
+		log.Fatalf("subscription registration failed : %v", err)
+	}
+
+	return c.subscribe(cond, f)
+}
+
+func (c *Client) subscribe(cond RouteCondition, f func(evt interface{})) error {
+	err := c.Client.Subscribe(cond.ReceiverName(), c.FuncSubHandler(f), nil)
+	if err != nil {
+		return fmt.Errorf("subscription failed:", err)
+	}
+	log.Printf("%s subscribed to %s", c.ID(), cond.ReceiverName())
+	return nil
 }
 
 func (c *Client) listenAndServeWithProgress(cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {

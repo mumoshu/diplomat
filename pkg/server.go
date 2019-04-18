@@ -240,8 +240,20 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 	}
 }
 
-func (srv *Server) ProcessEvent(sendproc string, evt []byte) ([]byte, error) {
-	log.Printf("Processing event: %v", string(evt))
+func (srv *Server) ProcessEvent(sendproc string, evt2 interface{}) ([]byte, error) {
+	log.Printf("Processing event: %v", evt2)
+
+	if err := srv.internalClient.Publish(sendproc, nil, wamp.List{}, wamp.Dict{"body": evt2}); err != nil {
+		log.Fatal(err)
+	}
+
+	var evt []byte
+
+	evt, ok := evt2.([]byte)
+	if !ok {
+		log.Printf("skipping %v because it isn't JSON", evt2)
+		return nil, nil
+	}
 
 	idsAndScores, err := srv.SearchRouteMatchesChannelAndJSON(sendproc, evt)
 	if err != nil {
@@ -258,6 +270,7 @@ func (srv *Server) ProcessEvent(sendproc string, evt []byte) ([]byte, error) {
 		}
 		topics := route.Topics
 		procs := route.Procedures
+		fmt.Printf("publishing to %s\n", topics)
 		for _, t := range topics {
 			if err := srv.internalClient.Publish(t, nil, wamp.List{}, wamp.Dict{"body": evt}); err != nil {
 				log.Fatal(err)

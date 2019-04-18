@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
+	"fmt"
 	"github.com/mumoshu/diplomat/pkg"
 	"github.com/mumoshu/diplomat/pkg/api"
-	"github.com/rs/xid"
 	"log"
 	"os"
 	"os/signal"
@@ -32,7 +34,7 @@ func main() {
 
 	echoWithFooIdEq1 := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(1)
 	echoSendChName := echoWithFooIdEq1.Channel.SendChannelURL()
-	echoFooBar1Topic := echoWithFooIdEq1.Channel.SendChannelURL()
+	echoReceiveAllChName := echoWithFooIdEq1.Channel.SendChannelURL()
 
 	// Echo Server
 
@@ -41,7 +43,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	srvDone, err := localConn.ListenAndServeWithProgress(echoWithFooIdEq1, func(evt []byte) ([]byte, error) {
+	srvDone, err := localConn.ServeWithProgress(echoWithFooIdEq1, func(evt []byte) ([]byte, error) {
 		return evt, nil
 	})
 	if err != nil {
@@ -57,39 +59,75 @@ func main() {
 		}
 	}
 
-	// Subscribe to topic.
-	sub1Id := "subscriber-local-" + xid.New().String()
-	subscriber, err := srv.Connect(sub1Id)
-	err = subscriber.Subscribe(echoFooBar1Topic, diplomat.CreateEvtHandler(sub1Id, echoFooBar1Topic), nil)
+	printingHandler := func(id string) func(evt interface{}) {
+		return func(evt interface{}) {
+			var r string
+			b64, ok := evt.(string)
+			// via websocket
+			if ok {
+				reader := base64.NewDecoder(base64.StdEncoding, bytes.NewBufferString(b64))
+				bytes := make([]byte, 10000)
+				_, err := reader.Read(bytes)
+				if err != nil {
+					panic(err)
+				}
+				r = string(bytes)
+			} else {
+				// via local connection
+				bytes, ok := evt.([]byte)
+				if !ok {
+					panic(fmt.Errorf("unexpected input: %v", evt))
+				}
+				r = string(bytes)
+			}
+			log.Printf("%s received: %v", id, r)
+		}
+	}
+
+	// Subscribe to all the echo events
+	receiveAllSub := "localEchoReceiveAllSubscriber"
+	subConn, err := srv.Connect(receiveAllSub)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	err = subConn.Subscribe(diplomat.On(api.DiplomatEchoChan).All(), printingHandler(receiveAllSub))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
-	log.Printf("%s subscribed to %s", sub1Id, echoFooBar1Topic)
+	log.Printf("%s subscribed to %s", receiveAllSub, echoReceiveAllChName)
 
-	sub2Id := "subscriber2-ws-" + xid.New().String()
-	srvRef := diplomat.NewWsServerRef(realm, netAddr, wsPort)
+	// Subscribe to all the echo events
+
+	receiveFooIdEq1Sub := "localEchoReceiveFooBarEq1Subscriber"
+	sub2Conn, err := srv.Connect(receiveFooIdEq1Sub)
+	err = sub2Conn.Subscribe(echoWithFooIdEq1, printingHandler(receiveFooIdEq1Sub))
+	if err != nil {
+		log.Fatal("subscribe error:", err)
+	}
+	log.Printf("%s subscribed to %s", receiveFooIdEq1Sub,  echoWithFooIdEq1.ReceiverName())
 
 	// WebSocket
 
-	echoWithFooIdEq2 := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(2)
+	srvRef := diplomat.NewWsServerRef(realm, netAddr, wsPort)
 
+	echoWithFooIdEq2 := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(2)
 	wsConn, err := srvRef.Connect(echoWithFooIdEq2.Channel.SendChannelURL() + "Conn")
 	if err != nil {
 		log.Fatalf("Connect failed: %v", err)
 	}
-
 	if err := wsConn.Serve(echoWithFooIdEq2, func(in interface{}) (interface{}, error) {
 		return in, nil
 	}); err != nil {
 		log.Fatalf("serve failed: %v", err)
 	}
 
+	sub2Id := "websocketEchoReceiveAllSubscriber"
 	subscriber2, err := srvRef.Connect(sub2Id)
-	err = subscriber2.Subscribe(echoFooBar1Topic, diplomat.CreateEvtHandler(sub2Id, echoFooBar1Topic), nil)
+	err = subscriber2.Subscribe(diplomat.On(api.DiplomatEchoChan).All(), printingHandler(sub2Id))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
-	log.Printf("%s subscribed to %s", sub2Id, echoFooBar1Topic)
+	log.Printf("%s subscribed to %s", sub2Id, echoReceiveAllChName)
 
 	res1, err := srv.ProcessEvent(api.DiplomatEchoChan.SendChannelURL(), evt)
 	if err != nil {
@@ -108,7 +146,7 @@ func main() {
 	//case <-srv2Done:
 	//	log.Print("locallCalee: Router2 gone, exiting")
 	//	return // router gone, just exit
-	case <-subscriber.Done():
+	case <-subConn.Done():
 		log.Print("subscriber: Router gone, exiting")
 		return // router gone, just exit
 	}
@@ -118,7 +156,7 @@ func main() {
 	//}
 
 	// Unsubscribe from topic.
-	if err = subscriber.Unsubscribe(echoFooBar1Topic); err != nil {
+	if err = subConn.Unsubscribe(echoReceiveAllChName); err != nil {
 		log.Fatal("Failed to unsubscribe:", err)
 	}
 
