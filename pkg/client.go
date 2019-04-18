@@ -75,6 +75,13 @@ func (c *Client) Register(reg Registration) error {
 }
 
 func (c *Client) Serve(cond RouteCondition, f func(in interface{}) (interface{}, error)) error {
+	if err := c.Register(Registration{RouteCondition: cond, Proc: true, Topic: false}); err != nil {
+		return fmt.Errorf("registration failed: %v", err)
+	}
+	return c.serve(cond, f)
+}
+
+func (c *Client) serve(cond RouteCondition, f func(in interface{}) (interface{}, error)) error {
 	cli := c.Client
 	handler := c.FuncHandler(f)
 	ch := cond.Channel
@@ -99,6 +106,15 @@ func (c *Client) FuncHandler(f func(in interface{}) (interface{}, error)) func(c
 }
 
 func (c *Client) ListenAndServeWithProgress(cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
+	reg := Registration{RouteCondition: cond, Proc: true, Topic: false,}
+	if err := c.Register(reg); err != nil {
+		log.Fatalf("registration failed 1: %v", err)
+	}
+
+	return c.listenAndServeWithProgress(cond, f)
+}
+
+func (c *Client) listenAndServeWithProgress(cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
 	//proc1 := srv.AddConditionalRouteToProcedure(cond)
 
 	procName := cond.ReceiverName()

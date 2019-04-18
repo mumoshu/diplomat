@@ -6,6 +6,8 @@ import (
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/router"
 	"github.com/gammazero/nexus/wamp"
+	"github.com/mitchellh/mapstructure"
+	"github.com/mumoshu/diplomat/pkg/api"
 	"io"
 	"log"
 	"net/http"
@@ -117,6 +119,10 @@ func (s *Server) ListenAndServe() (io.Closer, error) {
 
 	s.internalClient = localCallerConn
 
+	if err := s.startRegistrationServer(); err != nil {
+		return nil, err
+	}
+
 	return wsCloser, nil
 }
 
@@ -133,6 +139,33 @@ type Registration struct {
 	RouteCondition
 	Proc bool
 	Topic bool
+}
+
+func (s *Server) startRegistrationServer() error {
+	clientName := "diplomatRegistrationServer"
+	localRegistrationServerConn, err := s.Connect(clientName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Registration Server
+
+	ResponseOK := "OK"
+	if err := localRegistrationServerConn.serve(On(api.DiplomatRegisterChan).All(), func(in interface{}) (interface{}, error) {
+		var reg Registration
+		var ok bool
+		reg, ok = in.(Registration)
+		if !ok {
+			if err := mapstructure.Decode(in, &reg); err != nil {
+				return nil, fmt.Errorf("registration server: unexpected type of input %T: %v: %v", in, in, err)
+			}
+		}
+		s.Register(reg)
+		return ResponseOK, err
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) Connect(name string) (*Client, error) {
