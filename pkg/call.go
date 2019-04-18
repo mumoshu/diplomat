@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
-	"github.com/mumoshu/diplomat/pkg/api"
 	"log"
 	"strings"
 )
@@ -79,8 +78,8 @@ func progressiveCall(caller *client.Client, procedureName string, evt []byte, ch
 	return []byte(res), nil
 }
 
-func Call(caller *client.Client, ch api.ChannelRef, evt interface{}) (interface{}, error) {
-	return call(caller, ch.String(), evt)
+func Call(caller *client.Client, procedure string, evt interface{}) (interface{}, error) {
+	return call(caller, procedure, evt)
 }
 
 func call(caller *client.Client, procedureName string, evt interface{}) (interface{}, error) {
@@ -91,7 +90,7 @@ func call(caller *client.Client, procedureName string, evt interface{}) (interfa
 	result, err := caller.Call(
 		ctx, procedureName, nil, wamp.List{evt}, wamp.Dict{}, "")
 	if err != nil {
-		return nil, fmt.Errorf("Failed to call procedure:", err)
+		return nil, fmt.Errorf("Failed to call procedure: %v", err)
 	}
 
 	return result.Arguments[0], nil

@@ -190,7 +190,9 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 			log.Fatalf("unable to read body: %v", err)
 		}
 		evt := bufbody.Bytes()
-		res, err := srv.ProcessEvent(evt)
+		url := "http://" + r.Host + "/" + r.URL.Path
+		log.Printf("processing request to %s", url)
+		res, err := srv.ProcessEvent(url, evt)
 		if err != nil {
 			log.Printf("http handler failed: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -205,10 +207,10 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 	}
 }
 
-func (srv *Server) ProcessEvent(evt []byte) ([]byte, error) {
+func (srv *Server) ProcessEvent(sendproc string, evt []byte) ([]byte, error) {
 	log.Printf("Processing event: %v", string(evt))
 
-	idsAndScores, err := srv.SearchRouteMatchesJSON(evt)
+	idsAndScores, err := srv.SearchRouteMatchesChannelAndJSON(sendproc, evt)
 	if err != nil {
 		return nil, fmt.Errorf("handle event failed: %v", err)
 	}
@@ -217,7 +219,7 @@ func (srv *Server) ProcessEvent(evt []byte) ([]byte, error) {
 
 	for routeCondId, score := range idsAndScores {
 		route := srv.GetRoute(routeCondId)
-		thres := len(route.RouteCondition)
+		thres := len(route.RouteCondition.Expressions)
 		if score < thres {
 			log.Fatalf("skipping route %s due to low score: needs %d, got %d", route.ID(), thres, score)
 		}
@@ -240,6 +242,6 @@ func (srv *Server) ProcessEvent(evt []byte) ([]byte, error) {
 	return []byte(`{"message":"no handler found"}`), nil
 }
 
-func (srv *Server) TestCall(procName string, evt []byte) ([]byte, error) {
-	return ProgressiveCall(srv.internalClient.Client, procName, evt, 64)
-}
+//func (srv *Server) TestProgressiveCall(procName string, evt []byte) ([]byte, error) {
+//	return ProgressiveCall(srv.internalClient.Client, procName, evt, 64)
+//}

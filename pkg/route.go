@@ -32,14 +32,6 @@ type RouteCondition struct {
 	Expressions []Expr
 }
 
-func (c RouteCondition) TopicName() string {
-	return string("topic-" + c.ID())
-}
-
-func (c RouteCondition) ProcedureName() string {
-	return string("proc-" + c.ID())
-}
-
 type Route struct {
 	RouteCondition
 	Topics     []string
@@ -69,6 +61,10 @@ type RouteConditionRef interface {
 	HashValue() uint64
 }
 
+func (m RouteCondition) ReceiverName() string {
+	return string(m.ID())
+}
+
 func (m RouteCondition) ID() RouteConditionID {
 	keys := []string{}
 	d := map[string]string{}
@@ -90,7 +86,12 @@ func (m RouteCondition) ID() RouteConditionID {
 		idparts = append(idparts, fmt.Sprintf("%s=%s", k, d[k]))
 	}
 	query := strings.Join(idparts, "&")
-	id := strings.Join([]string{m.Channel.String(), query}, "?")
+	var id string
+	if query != "" {
+		id = strings.Join([]string{m.Channel.SendChannelURL(), query}, "?")
+	} else {
+		id = m.Channel.SendChannelURL()
+	}
 	return RouteConditionID(id)
 }
 

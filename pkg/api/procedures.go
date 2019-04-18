@@ -14,6 +14,10 @@ type ChannelRef struct {
 	ChannelName string
 }
 
+func (c ChannelRef) SendChannelURL() string {
+	return string(c.String())
+}
+
 func (id ChannelRef) String() string {
 	return fmt.Sprintf("%s:///%s", id.Scheme, id.ChannelName)
 }
@@ -23,7 +27,7 @@ func init() {
 		Scheme:      SchemeDiplomat,
 		ChannelName: "register",
 	}
-	DiplomatRegisterChan = ChannelRef{
+	DiplomatEchoChan = ChannelRef{
 		Scheme:      SchemeDiplomat,
 		ChannelName: "echo",
 	}

@@ -66,22 +66,24 @@ type Client struct {
 //}
 //
 
-func (c *Client) ApplyRegistration(reg Registration) error {
-	_, err := Call(c.Client, api.DiplomatRegisterChan, reg)
+func (c *Client) Register(reg Registration) error {
+	_, err := Call(c.Client, api.DiplomatRegisterChan.SendChannelURL(), reg)
 	if err != nil {
 		return fmt.Errorf("registration failed: %v", err)
 	}
 	return nil
 }
 
-func (c *Client) Serve(ch RouteCondition, f func(in interface{}) (interface{}, error)) error {
+func (c *Client) Serve(cond RouteCondition, f func(in interface{}) (interface{}, error)) error {
 	cli := c.Client
 	handler := c.FuncHandler(f)
-	if err := cli.Register(ch.ProcedureName(), handler, make(wamp.Dict)); err != nil {
+	ch := cond.Channel
+	proc := cond.ReceiverName()
+	if err := cli.Register(proc, handler, make(wamp.Dict)); err != nil {
 		return fmt.Errorf("Failed to register %q: %s", ch, err)
 	}
 
-	log.Printf("Registered procedure %q with router", ch)
+	log.Printf("Registered procedure %s for channel %s with router", proc, ch)
 	return nil
 }
 
@@ -99,7 +101,7 @@ func (c *Client) FuncHandler(f func(in interface{}) (interface{}, error)) func(c
 func (c *Client) ListenAndServeWithProgress(cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
 	//proc1 := srv.AddConditionalRouteToProcedure(cond)
 
-	procName := cond.ProcedureName()
+	procName := cond.ReceiverName()
 
 	cli := c.Client
 

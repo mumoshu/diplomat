@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"time"
+	"github.com/mitchellh/mapstructure"
 )
 
 func main() {
@@ -19,10 +21,6 @@ func main() {
 			RoutePartitions: map[uint64]*diplomat.RoutesPartition{},
 		},
 		RouteIndex: &diplomat.RouteIndex{
-			Root: &diplomat.Node{
-				Matchers: []*diplomat.Matcher{},
-				Children: map[string]*diplomat.Node{},
-			},
 		},
 		Realm:   realm,
 		NetAddr: netAddr,
@@ -35,20 +33,13 @@ func main() {
 	}
 	defer srvCloser.Close()
 
-	intval := 1
-	//echoFooBar1Cond := diplomat.RouteCondition{
-	//	Channel: api.DiplomatEchoChan,
-	//	Expressions: []diplomat.Expr{
-	//		{Path: []string{"foo", "id"}, Int: &intval},
-	//	},
-	//}
-	echoFooBar1Cond := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(1)
-	echoFooBar1Proc := echoFooBar1Cond.ProcedureName()
-	echoFooBar1Topic := echoFooBar1Cond.TopicName()
+	echoWithFooIdEq1 := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(1)
+	echoSendChName := echoWithFooIdEq1.Channel.SendChannelURL()
+	echoFooBar1Topic := echoWithFooIdEq1.Channel.SendChannelURL()
 	//srv.Register(cond, true, true)
 
-	clientName := echoFooBar1Proc
-	localConn1, err := srv.Connect(clientName)
+	clientName := echoSendChName + "Server"
+	localRegistrationServerConn, err := srv.Connect(clientName)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -56,10 +47,14 @@ func main() {
 	// Registration Server
 
 	ResponseOK := "OK"
-	if err := localConn1.Serve(diplomat.On(api.DiplomatRegisterChan).All(), func(in interface{}) (interface{}, error) {
-		reg, ok := in.(diplomat.Registration)
+	if err := localRegistrationServerConn.Serve(diplomat.On(api.DiplomatRegisterChan).All(), func(in interface{}) (interface{}, error) {
+		var reg diplomat.Registration
+		var ok bool
+		reg, ok = in.(diplomat.Registration)
 		if !ok {
-			return nil, fmt.Errorf("unexpected type of input %T: %v", in, in)
+			if err := mapstructure.Decode(in, &reg); err != nil {
+				return nil, fmt.Errorf("registration server: unexpected type of input %T: %v: %v", in, in, err)
+			}
 		}
 		srv.Register(reg)
 		return ResponseOK, err
@@ -67,14 +62,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	reg := diplomat.Registration{RouteCondition: echoFooBar1Cond, Proc: true, Topic: true,}
-	if err := localConn1.ApplyRegistration(reg); err != nil {
+	time.Sleep(1 * time.Second)
+
+	localConn, err := srv.Connect("localConn")
+	if err != nil {
 		log.Fatal(err)
+	}
+	reg := diplomat.Registration{RouteCondition: echoWithFooIdEq1, Proc: true, Topic: true,}
+	if err := localConn.Register(reg); err != nil {
+		log.Fatalf("registration failed 1: %v", err)
 	}
 
 	// Echo Server
 
-	srvDone, err := localConn1.ListenAndServeWithProgress(echoFooBar1Cond, func(evt []byte) ([]byte, error) {
+	srvDone, err := localRegistrationServerConn.ListenAndServeWithProgress(echoWithFooIdEq1, func(evt []byte) ([]byte, error) {
 		return evt, nil
 	})
 	if err != nil {
@@ -83,7 +84,12 @@ func main() {
 
 	evt := []byte(`{"foo":{"id":1}}`)
 
-	srv.TestCall(echoFooBar1Proc, evt)
+	{
+		_, err := srv.ProcessEvent(echoSendChName, evt)
+		if err != nil {
+			log.Fatalf("TestProgressiveCall failed: %v", err)
+		}
+	}
 
 	// Subscribe to topic.
 	sub1Id := "subscriber-local-" + xid.New().String()
@@ -99,26 +105,21 @@ func main() {
 
 	// WebSocket
 
-	cond2 := diplomat.Where("foo", "id").EqInt(2)
+	echoWithFooIdEq2 := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(2)
 
-	srv.Register(cond2, true, false)
-
-	wscli, err := srvRef.Connect(cond2.Proc())
+	wscli, err := srvRef.Connect(echoWithFooIdEq2.Channel.SendChannelURL() + "Conn")
 	if err != nil {
 		log.Fatalf("Connect failed: %v", err)
 	}
 
-	res, err := diplomat.ProgressiveCall(wscli, "/api/v1/register", map[string]interface{}{"proc": true}, 64)
-	if err != nil {
-		log.Fatalf("registration api call failed: %v", err)
+	if err := wscli.Register(diplomat.Registration{RouteCondition: echoWithFooIdEq2, Proc: true, Topic: false}); err != nil {
+		log.Fatalf("registration failed: %v", err)
 	}
-	log.Printf("res: %s", string(res))
 
-	srv2Done, err := diplomat.Serve(wscli, cond2, func(evt []byte) ([]byte, error) {
-		return evt, nil
-	})
-	if err != nil {
-		log.Fatalf("Serve2 failed: %v", err)
+	if err := wscli.Serve(echoWithFooIdEq2, func(in interface{}) (interface{}, error) {
+		return in, nil
+	}); err != nil {
+		log.Fatalf("serve failed: %v", err)
 	}
 
 	subscriber2, err := srvRef.Connect(sub2Id)
@@ -128,7 +129,7 @@ func main() {
 	}
 	log.Printf("%s subscribed to %s", sub2Id, echoFooBar1Topic)
 
-	res1, err := srv.ProcessEvent(evt)
+	res1, err := srv.ProcessEvent(api.DiplomatEchoChan.SendChannelURL(), evt)
 	if err != nil {
 		log.Fatalf("err: %v", err)
 	}
@@ -142,9 +143,9 @@ func main() {
 	case <-srvDone:
 		log.Print("locallCalee: Router gone, exiting")
 		return // router gone, just exit
-	case <-srv2Done:
-		log.Print("locallCalee: Router2 gone, exiting")
-		return // router gone, just exit
+	//case <-srv2Done:
+	//	log.Print("locallCalee: Router2 gone, exiting")
+	//	return // router gone, just exit
 	case <-subscriber.Done():
 		log.Print("subscriber: Router gone, exiting")
 		return // router gone, just exit

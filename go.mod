@@ -27,6 +27,7 @@ require (
 	github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6 // indirect
 	github.com/jmhodges/levigo v1.0.0 // indirect
 	github.com/minio/highwayhash v1.0.0
+	github.com/mitchellh/mapstructure v1.1.2 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20190321074620-2f0d2b0e0001 // indirect
 	github.com/rs/xid v1.2.1
 	github.com/steveyen/gtreap v0.0.0-20150807155958-0abe01ef9be2 // indirect

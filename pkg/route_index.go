@@ -19,10 +19,14 @@ type Node struct {
 	Children map[string]*Node
 }
 
-type RouteIndex struct {
+type ContentBasedRouteIndex struct {
 	parserPool fastjson.ParserPool
 
 	Root *Node
+}
+
+type RouteIndex struct {
+	ChannelToIndex map[string]*ContentBasedRouteIndex
 }
 
 func newNode() *Node {
@@ -32,7 +36,7 @@ func newNode() *Node {
 	}
 }
 
-func (idx *RouteIndex) getNode(path []string) *Node {
+func (idx *ContentBasedRouteIndex) getNode(path []string) *Node {
 	node := idx.Root
 	for _, k := range path {
 		if node.Children[k] == nil {
@@ -43,7 +47,7 @@ func (idx *RouteIndex) getNode(path []string) *Node {
 	return node
 }
 
-func (idx *RouteIndex) Index(r *Route) {
+func (idx *ContentBasedRouteIndex) Index(r *Route) {
 	for _, cond := range r.RouteCondition.Expressions {
 		id := r.ID()
 		m := &Matcher{
@@ -61,7 +65,7 @@ func (idx *RouteIndex) Index(r *Route) {
 	log.Printf("Index updated: %s", string(dump))
 }
 
-func (idx *RouteIndex) SearchRouteMatchesJSON(data []byte) (map[RouteConditionID]int, error) {
+func (idx *ContentBasedRouteIndex) SearchRouteMatchesJSON(data []byte) (map[RouteConditionID]int, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("search failed: empty body")
 	}
@@ -72,6 +76,32 @@ func (idx *RouteIndex) SearchRouteMatchesJSON(data []byte) (map[RouteConditionID
 		return nil, err
 	}
 	return idx.Root.search(&SearchContext{map[RouteConditionID]int{}}, jsonValue)
+}
+
+func (idx *RouteIndex) Index(r *Route) {
+	ch := r.Channel.SendChannelURL()
+	if idx.ChannelToIndex == nil {
+		idx.ChannelToIndex = map[string]*ContentBasedRouteIndex{}
+	}
+	_, ok := idx.ChannelToIndex[ch]
+	if !ok {
+		idx.ChannelToIndex[ch] = &ContentBasedRouteIndex{
+			Root: &Node{
+				Matchers: []*Matcher{},
+				Children: map[string]*Node{},
+			},
+		}
+	}
+	idx.ChannelToIndex[ch].Index(r)
+}
+
+
+func (idx *RouteIndex) SearchRouteMatchesChannelAndJSON(ch string, data []byte) (map[RouteConditionID]int, error) {
+	cidx, ok := idx.ChannelToIndex[ch]
+	if !ok {
+		return nil, fmt.Errorf("unknown channel: no route registered for this channel. please run a server that responds to this channel")
+	}
+	return cidx.SearchRouteMatchesJSON(data)
 }
 
 type SearchContext struct {
