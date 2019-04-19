@@ -19,7 +19,7 @@ func (c ChannelRef) SendChannelURL() string {
 }
 
 func (id ChannelRef) String() string {
-	return fmt.Sprintf("%s:///%s", id.Scheme, id.ChannelName)
+	return fmt.Sprintf("%s://%s", id.Scheme, id.ChannelName)
 }
 
 func init() {

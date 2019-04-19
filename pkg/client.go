@@ -7,6 +7,7 @@ import (
 	"github.com/gammazero/nexus/wamp"
 	"github.com/mumoshu/diplomat/pkg/api"
 	"log"
+	"net/url"
 	"time"
 )
 
@@ -18,6 +19,19 @@ type CondBuilder struct {
 func On(ch api.ChannelRef) CondBuilder {
 	return CondBuilder{
 		Channel: ch,
+	}
+}
+
+func OnURL(u string) CondBuilder {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		panic(err)
+	}
+	return CondBuilder{
+		Channel: api.ChannelRef{
+			Scheme: api.Scheme(parsed.Scheme),
+			ChannelName: fmt.Sprintf("%s%s", parsed.Host, parsed.Path),
+		},
 	}
 }
 

@@ -16,7 +16,6 @@ func main() {
 	netAddr := "0.0.0.0"
 	wsPort := 8000
 	srv := diplomat.NewServer(diplomat.Server{Realm: realm, NetAddr: netAddr, WsPort: wsPort})
-	extHost := os.Getenv("EXT_HOST")
 
 	srvCloser, err := srv.ListenAndServe()
 	if err != nil {
@@ -114,14 +113,19 @@ func main() {
 		log.Fatalf("serve failed: %v", err)
 	}
 
-	sub2Id := "githubWebhookHandler"
+	sub2Id := "websocketEchoReceiveAllSubscriber"
 	subscriber2, err := srvRef.Connect(sub2Id)
-	cond3 := diplomat.OnURL(fmt.Sprintf("http://%s/webhook/github", extHost)).All()
-	err = subscriber2.Subscribe(cond3, printingHandler(sub2Id))
+	err = subscriber2.Subscribe(diplomat.On(api.DiplomatEchoChan).All(), printingHandler(sub2Id))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
-	log.Printf("%s subscribed to %s", sub2Id, cond3.ReceiverName())
+	log.Printf("%s subscribed to %s", sub2Id, echoReceiveAllChName)
+
+	res1, err := srv.ProcessEvent(api.DiplomatEchoChan.SendChannelURL(), evt)
+	if err != nil {
+		log.Fatalf("err: %v", err)
+	}
+	log.Printf("ProcessEvent returned: %s", string(res1))
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
 	shutdown := make(chan os.Signal, 1)
@@ -131,11 +135,19 @@ func main() {
 	case <-srvDone:
 		log.Print("locallCalee: Router gone, exiting")
 		return // router gone, just exit
+	//case <-srv2Done:
+	//	log.Print("locallCalee: Router2 gone, exiting")
+	//	return // router gone, just exit
 	case <-subConn.Done():
 		log.Print("subscriber: Router gone, exiting")
 		return // router gone, just exit
 	}
 
+	//if err = locallCalee.Unregister(proc1); err != nil {
+	//	log.Println("Failed to unregister procedure:", err)
+	//}
+
+	// Unsubscribe from topic.
 	if err = subConn.Unsubscribe(echoReceiveAllChName); err != nil {
 		log.Fatal("Failed to unsubscribe:", err)
 	}
