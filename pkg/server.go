@@ -40,6 +40,19 @@ type Server struct {
 	internalClient *Client
 }
 
+func NewServer(opts Server) *Server {
+	return &Server{
+		RouteTable: &RouteTable{
+			RoutePartitions: map[uint64]*RoutesPartition{},
+		},
+		RouteIndex: &RouteIndex{
+		},
+		Realm:   opts.Realm,
+		NetAddr: opts.NetAddr,
+		WsPort:  opts.WsPort,
+	}
+}
+
 func (s *Server) ListenAndServe() (io.Closer, error) {
 	var (
 		netAddr  = s.NetAddr
@@ -137,7 +150,7 @@ type RemoteServerRef struct {
 
 type Registration struct {
 	RouteCondition
-	Proc bool
+	Proc  bool
 	Topic bool
 }
 
@@ -197,7 +210,7 @@ func (srv *Server) Register(reg Registration) {
 func NewWsServerRef(realm, host string, port int) *RemoteServerRef {
 	return &RemoteServerRef{
 		Realm: realm,
-		URL: fmt.Sprintf("ws://%s:%d", host, port),
+		URL:   fmt.Sprintf("ws://%s:%d", host, port),
 	}
 }
 

@@ -15,16 +15,7 @@ func main() {
 	realm := "channel1"
 	netAddr := "0.0.0.0"
 	wsPort := 8000
-	srv := &diplomat.Server{
-		RouteTable: &diplomat.RouteTable{
-			RoutePartitions: map[uint64]*diplomat.RoutesPartition{},
-		},
-		RouteIndex: &diplomat.RouteIndex{
-		},
-		Realm:   realm,
-		NetAddr: netAddr,
-		WsPort:  wsPort,
-	}
+	srv := diplomat.NewServer(diplomat.Server{Realm: realm, NetAddr: netAddr, WsPort: wsPort})
 
 	srvCloser, err := srv.ListenAndServe()
 	if err != nil {
@@ -115,6 +106,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Connect failed: %v", err)
 	}
+
 	if err := wsConn.Serve(echoWithFooIdEq2, func(in interface{}) (interface{}, error) {
 		return in, nil
 	}); err != nil {
