@@ -58,12 +58,12 @@ func main() {
 			// via websocket
 			if ok {
 				reader := base64.NewDecoder(base64.StdEncoding, bytes.NewBufferString(b64))
-				bytes := make([]byte, 10000)
-				_, err := reader.Read(bytes)
+				buf := new(bytes.Buffer)
+				_, err := buf.ReadFrom(reader)
 				if err != nil {
 					panic(err)
 				}
-				r = string(bytes)
+				r = string(buf.Bytes())
 			} else {
 				// via local connection
 				bytes, ok := evt.([]byte)

@@ -246,8 +246,10 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 		_, err := bufbody.ReadFrom(r.Body)
 		if err != nil {
 			log.Fatalf("unable to read body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
-		evt := bufbody.Bytes()
+		httpReqBody := bufbody.Bytes()
 		if strings.Index(r.URL.Path, "/") != 0 {
 			log.Printf("http handler failed: invalid path: path should start with /: %s", r.URL.Path)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -255,7 +257,7 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 		}
 		url := "http://" + r.Host + r.URL.Path
 		log.Printf("processing request to %s", url)
-		res, err := srv.ProcessEvent(url, evt)
+		res, err := srv.ProcessEvent(url, httpReqBody)
 		if err != nil {
 			log.Printf("http handler failed: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -270,19 +272,11 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 	}
 }
 
-func (srv *Server) ProcessEvent(sendproc string, evt2 interface{}) ([]byte, error) {
-	log.Printf("Processing event: %v", evt2)
+func (srv *Server) ProcessEvent(sendproc string, evt []byte) ([]byte, error) {
+	log.Printf("Processing event: %s", evt)
 
-	if err := srv.internalClient.Publish(sendproc, nil, wamp.List{}, wamp.Dict{"body": evt2}); err != nil {
+	if err := srv.internalClient.Publish(sendproc, nil, wamp.List{}, wamp.Dict{"body": evt}); err != nil {
 		log.Fatal(err)
-	}
-
-	var evt []byte
-
-	evt, ok := evt2.([]byte)
-	if !ok {
-		log.Printf("skipping %v because it isn't JSON", evt2)
-		return nil, nil
 	}
 
 	idsAndScores, err := srv.SearchRouteMatchesChannelAndJSON(sendproc, evt)
