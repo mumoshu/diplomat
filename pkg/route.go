@@ -30,6 +30,7 @@ type Expr struct {
 type RouteCondition struct {
 	Channel api.ChannelRef
 	Expressions []Expr
+	FormParameterName string
 }
 
 type Route struct {

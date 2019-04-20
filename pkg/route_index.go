@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"github.com/valyala/fastjson"
 	"log"
+	"net/url"
+	"os"
+	"strings"
 )
 
 type Matcher struct {
@@ -26,7 +29,8 @@ type ContentBasedRouteIndex struct {
 }
 
 type RouteIndex struct {
-	ChannelToIndex map[string]*ContentBasedRouteIndex
+	SendChannelToJsonHandlerIndex          map[string]*ContentBasedRouteIndex
+	SendChannelToFormParameterHandlerIndex map[string]map[string]*ContentBasedRouteIndex
 }
 
 func newNode() *Node {
@@ -80,26 +84,75 @@ func (idx *ContentBasedRouteIndex) SearchRouteMatchesJSON(data []byte) (map[Rout
 
 func (idx *RouteIndex) Index(r *Route) {
 	ch := r.Channel.SendChannelURL()
-	if idx.ChannelToIndex == nil {
-		idx.ChannelToIndex = map[string]*ContentBasedRouteIndex{}
+	if idx.SendChannelToJsonHandlerIndex == nil {
+		idx.SendChannelToJsonHandlerIndex = map[string]*ContentBasedRouteIndex{}
 	}
-	_, ok := idx.ChannelToIndex[ch]
-	if !ok {
-		idx.ChannelToIndex[ch] = &ContentBasedRouteIndex{
-			Root: &Node{
-				Matchers: []*Matcher{},
-				Children: map[string]*Node{},
-			},
+	if idx.SendChannelToFormParameterHandlerIndex == nil {
+		idx.SendChannelToFormParameterHandlerIndex = map[string]map[string]*ContentBasedRouteIndex{}
+	}
+	if r.FormParameterName == "" {
+		_, ok := idx.SendChannelToJsonHandlerIndex[ch]
+		if !ok {
+			idx.SendChannelToJsonHandlerIndex[ch] = &ContentBasedRouteIndex{
+				Root: &Node{
+					Matchers: []*Matcher{},
+					Children: map[string]*Node{},
+				},
+			}
 		}
+		idx.SendChannelToJsonHandlerIndex[ch].Index(r)
+	} else {
+		_, ok := idx.SendChannelToFormParameterHandlerIndex[ch]
+		if !ok {
+			idx.SendChannelToFormParameterHandlerIndex[ch] = map[string]*ContentBasedRouteIndex{
+			}
+		}
+		_, ok2 := idx.SendChannelToFormParameterHandlerIndex[ch][r.FormParameterName]
+		if !ok2 {
+			idx2 := &ContentBasedRouteIndex{
+				Root: &Node{
+					Matchers: []*Matcher{},
+					Children: map[string]*Node{},
+				},
+			}
+			idx.SendChannelToFormParameterHandlerIndex[ch][r.FormParameterName] = idx2
+		}
+		idx.SendChannelToFormParameterHandlerIndex[ch][r.FormParameterName].Index(r)
 	}
-	idx.ChannelToIndex[ch].Index(r)
 }
 
-
 func (idx *RouteIndex) SearchRouteMatchesChannelAndJSON(ch string, data []byte) (map[RouteConditionID]int, error) {
-	cidx, ok := idx.ChannelToIndex[ch]
+	cidx, ok := idx.SendChannelToJsonHandlerIndex[ch]
 	if !ok {
-		return nil, fmt.Errorf("unknown channel: no route registered for this channel. please run a server that responds to this channel")
+		_, ok2 := idx.SendChannelToFormParameterHandlerIndex[ch]
+		if !ok2 {
+			return nil, fmt.Errorf("unknown channel: no route registered for this channel. please run a server that responds to this channel")
+		}
+		// parse request body
+		str := string(data)
+		kvslice := strings.Split(str, "&")
+		kvs := map[string]string{}
+		for _, kv := range kvslice {
+			split := strings.Split(kv, "=")
+			k := split[0]
+			v := split[1]
+			kvs[k] = v
+		}
+		for param, idx2 := range idx.SendChannelToFormParameterHandlerIndex[ch] {
+			v, ok3 := kvs[param]
+			if !ok3 {
+				continue
+			}
+			vAsJson, err := url.QueryUnescape(v)
+			score, err := idx2.SearchRouteMatchesJSON([]byte(vAsJson))
+			if len(score) > 0 {
+				return score, err
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "ignoring err: %v", err)
+			}
+		}
+		return nil, fmt.Errorf("no match for data: %s", string(data))
 	}
 	return cidx.SearchRouteMatchesJSON(data)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/mumoshu/diplomat/pkg"
 	"github.com/mumoshu/diplomat/pkg/api"
+	"github.com/nlopes/slack"
 	"log"
 	"os"
 	"os/signal"
@@ -130,6 +131,24 @@ func main() {
 		log.Fatal("subscribe error:", err)
 	}
 	log.Printf("%s subscribed to %s", sub3Id, cond4.ReceiverName())
+
+	// Register the webhook url at https://api.slack.com/apps/<ID>/interactive-messages?
+	sub4Id := "slackInteractiveComponentsWebhookHandler"
+	slackIntUrl := fmt.Sprintf("http://%s/webhook/slack-interactive", extHost)
+	cond5 := diplomat.OnURL(slackIntUrl).All()
+	slackInteractionsHandler := diplomat.InteractionHandler{
+		SlackClient: slack.New(os.Getenv("BOT_USER_OAUTH_ACCESS_TOKEN")),
+		// verification token can be obtained at https://api.slack.com/apps/<APP ID>/general?
+		// after creating an slack app
+		VerificationToken: os.Getenv("VERIFICATION_TOKEN"),
+		Srv:               srv,
+	}
+	cond5.FormParameterName = "payload"
+	err = subscriber2.SubscribeHTTP(slackIntUrl, cond5, slackInteractionsHandler)
+	if err != nil {
+		log.Fatal("subscribe error:", err)
+	}
+	log.Printf("%s subscribed to %s", sub4Id, cond5.ReceiverName())
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
 	shutdown := make(chan os.Signal, 1)

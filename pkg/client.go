@@ -1,19 +1,24 @@
 package diplomat
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
 	"github.com/mumoshu/diplomat/pkg/api"
+	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"net/url"
+	"os"
 	"time"
 )
 
 type CondBuilder struct {
 	Channel api.ChannelRef
-	Path []string
+	Path    []string
 }
 
 func On(ch api.ChannelRef) CondBuilder {
@@ -29,7 +34,7 @@ func OnURL(u string) CondBuilder {
 	}
 	return CondBuilder{
 		Channel: api.ChannelRef{
-			Scheme: api.Scheme(parsed.Scheme),
+			Scheme:      api.Scheme(parsed.Scheme),
 			ChannelName: fmt.Sprintf("%s%s", parsed.Host, parsed.Path),
 		},
 	}
@@ -147,6 +152,138 @@ func (c *Client) Subscribe(cond RouteCondition, f func(evt interface{})) error {
 
 func (c *Client) subscribe(cond RouteCondition, f func(evt interface{})) error {
 	err := c.Client.Subscribe(cond.ReceiverName(), c.FuncSubHandler(f), nil)
+	if err != nil {
+		return fmt.Errorf("subscription failed:", err)
+	}
+	log.Printf("%s subscribed to %s", c.ID(), cond.ReceiverName())
+	return nil
+}
+
+type HttpHandler interface {
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
+func (c *Client) SubscribeHTTP(url string, cond RouteCondition, handler HttpHandler) error {
+	reg := Registration{RouteCondition: cond, Proc: false, Topic: true,}
+	if err := c.Register(reg); err != nil {
+		log.Fatalf("slack subscription registration failed : %v", err)
+	}
+
+	return c.subscribeHttp(url, cond, handler)
+}
+
+func (c *Client) ServeHTTP(url string, cond RouteCondition, handler HttpHandler) error {
+	reg := Registration{RouteCondition: cond, Proc: true, Topic: false}
+	if err := c.Register(reg); err != nil {
+		return fmt.Errorf("slack serve registration failed: %v", err)
+	}
+	return c.serveHttp(url, cond, handler)
+}
+
+func (c *Client) serveHttp(uu string, cond RouteCondition, f http.Handler) error {
+	cli := c.Client
+	handler, err := httpInvocationHandlerAdapter(uu, f)
+	if err != nil {
+		return err
+	}
+	ch := cond.Channel
+	proc := cond.ReceiverName()
+	if err := cli.Register(proc, handler, make(wamp.Dict)); err != nil {
+		return fmt.Errorf("Failed to register %q: %s", ch, err)
+	}
+
+	log.Printf("Registered procedure %s for channel %s with router", proc, ch)
+	return nil
+}
+
+
+type ResponseWriter struct {
+	Response map[string]interface{}
+}
+
+func (w ResponseWriter) Header() http.Header {
+	_, ok := w.Response["header"]
+	if !ok {
+		w.Response["header"] = http.Header{}
+	}
+	return w.Response["header"].(http.Header)
+}
+
+func (w ResponseWriter) Write(body []byte) (int, error) {
+	w.Response["body"] = body
+	return len(body), nil
+}
+
+func (w ResponseWriter) WriteHeader(statusCode int) {
+	w.Response["statusCode"] = statusCode
+}
+
+func httpHandlerAdapter(uu string, f HttpHandler, onResponse func(map[string]interface{}) error) (func(args wamp.List, kwargs wamp.Dict, details wamp.Dict), error) {
+	u, err := url.Parse(uu)
+	if err != nil {
+		return nil, err
+	}
+	handler := func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
+		r := wampMessageToHttpRequest(u, args, kwargs, details)
+		resWriter := ResponseWriter{}
+		f.ServeHTTP(resWriter, r)
+		if onResponse != nil {
+			err := onResponse(resWriter.Response)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "on response error: %v", err)
+			}
+		} else {
+			resBody := resWriter.Response["body"]
+			if resBody != nil {
+				fmt.Fprintf(os.Stderr, "discarding response body because  no response handler provided. perhaps this is an subscription?")
+			}
+		}
+	}
+	return handler, nil
+}
+
+func wampMessageToHttpRequest(u *url.URL, args wamp.List, kwargs wamp.Dict, details wamp.Dict) *http.Request {
+	body := kwargs["body"].([]byte)
+	bodyReader := ioutil.NopCloser(bytes.NewReader(body))
+	r := &http.Request{
+		Method:     http.MethodPost,
+		URL:        u,
+		Proto:      "http",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     kwargs["header"].(http.Header),
+		Body:       bodyReader,
+		GetBody: func() (io.ReadCloser, error) {
+			return bodyReader, nil
+		},
+		ContentLength:    int64(len(body)),
+		TransferEncoding: []string{},
+	}
+	return r
+}
+
+func httpInvocationHandlerAdapter(uu string, f HttpHandler) (func(ctx context.Context, args wamp.List, kwargs wamp.Dict, details wamp.Dict) *client.InvokeResult, error) {
+	u, err := url.Parse(uu)
+	if err != nil {
+		return nil, err
+	}
+	handler := func(ctx context.Context, args wamp.List, kwargs wamp.Dict, details wamp.Dict) *client.InvokeResult {
+		r := wampMessageToHttpRequest(u, args, kwargs, details)
+		resWriter := ResponseWriter{}
+		f.ServeHTTP(resWriter, r)
+		return &client.InvokeResult{Kwargs: wamp.Dict(resWriter.Response)}
+	}
+	return handler, nil
+}
+
+func (c *Client) subscribeHttp(uu string, cond RouteCondition, f HttpHandler) error {
+	var handler client.EventHandler
+
+	handler, err := httpHandlerAdapter(uu, f, nil)
+	if err != nil {
+		return err
+	}
+	err = c.Client.Subscribe(cond.ReceiverName(), handler, nil)
 	if err != nil {
 		return fmt.Errorf("subscription failed:", err)
 	}

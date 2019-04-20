@@ -150,6 +150,7 @@ type RemoteServerRef struct {
 }
 
 type Registration struct {
+	FormParameterName string
 	RouteCondition `mapstructure:",squash"`
 	Proc  bool
 	Topic bool
@@ -272,14 +273,14 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 	}
 }
 
-func (srv *Server) ProcessEvent(sendproc string, evt []byte) ([]byte, error) {
-	log.Printf("Processing event: %s", evt)
+func (srv *Server) ProcessEvent(sendproc string, body []byte) ([]byte, error) {
+	log.Printf("Processing event: %s", body)
 
-	if err := srv.internalClient.Publish(sendproc, nil, wamp.List{}, wamp.Dict{"body": evt}); err != nil {
+	if err := srv.internalClient.Publish(sendproc, nil, wamp.List{}, wamp.Dict{"body": body}); err != nil {
 		log.Fatal(err)
 	}
 
-	idsAndScores, err := srv.SearchRouteMatchesChannelAndJSON(sendproc, evt)
+	idsAndScores, err := srv.SearchRouteMatchesChannelAndJSON(sendproc, body)
 	if err != nil {
 		return nil, fmt.Errorf("handle event failed: %v", err)
 	}
@@ -298,7 +299,7 @@ func (srv *Server) ProcessEvent(sendproc string, evt []byte) ([]byte, error) {
 		procs := route.Procedures
 		fmt.Printf("publishing to %s\n", topics)
 		for _, t := range topics {
-			if err := srv.internalClient.Publish(t, nil, wamp.List{}, wamp.Dict{"body": evt}); err != nil {
+			if err := srv.internalClient.Publish(t, nil, wamp.List{}, wamp.Dict{"body": body}); err != nil {
 				log.Fatal(err)
 			}
 		}
@@ -308,7 +309,7 @@ func (srv *Server) ProcessEvent(sendproc string, evt []byte) ([]byte, error) {
 		}
 
 		for _, p := range procs {
-			_, err := ProgressiveCall(srv.internalClient.Client, p, evt, 64)
+			_, err := ProgressiveCall(srv.internalClient.Client, p, body, 64)
 			if err != nil {
 				log.Fatal(err)
 			} else {

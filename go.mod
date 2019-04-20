@@ -28,6 +28,8 @@ require (
 	github.com/jmhodges/levigo v1.0.0 // indirect
 	github.com/minio/highwayhash v1.0.0
 	github.com/mitchellh/mapstructure v1.1.2
+	github.com/nlopes/slack v0.5.0
+	github.com/pkg/errors v0.8.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20190321074620-2f0d2b0e0001 // indirect
 	github.com/rs/xid v1.2.1
 	github.com/steveyen/gtreap v0.0.0-20150807155958-0abe01ef9be2 // indirect
