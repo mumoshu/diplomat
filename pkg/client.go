@@ -81,6 +81,7 @@ type Client struct {
 //
 
 func (c *Client) Register(reg Registration) error {
+	fmt.Printf("client: registering %v\n", reg)
 	_, err := Call(c.Client, api.DiplomatRegisterChan.SendChannelURL(), reg)
 	if err != nil {
 		return fmt.Errorf("registration failed: %v", err)

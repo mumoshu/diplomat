@@ -15,7 +15,12 @@ func main() {
 	realm := "channel1"
 	netAddr := "0.0.0.0"
 	wsPort := 8000
-	srv := diplomat.NewServer(diplomat.Server{Realm: realm, NetAddr: netAddr, WsPort: wsPort})
+	srv := diplomat.NewServer(diplomat.Server{
+		Realm: realm,
+		NetAddr: netAddr,
+		WsPort: wsPort,
+		HttpPort: 9001,
+	})
 
 	srvCloser, err := srv.ListenAndServe()
 	if err != nil {

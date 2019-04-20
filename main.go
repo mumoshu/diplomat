@@ -123,6 +123,14 @@ func main() {
 	}
 	log.Printf("%s subscribed to %s", sub2Id, cond3.ReceiverName())
 
+	sub3Id := "slackWebhookHandler"
+	cond4 := diplomat.OnURL(fmt.Sprintf("http://%s/webhook/slack", extHost)).All()
+	err = subscriber2.Subscribe(cond4, printingHandler(sub3Id))
+	if err != nil {
+		log.Fatal("subscribe error:", err)
+	}
+	log.Printf("%s subscribed to %s", sub3Id, cond4.ReceiverName())
+
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt)

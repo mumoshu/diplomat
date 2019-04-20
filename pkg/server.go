@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -149,7 +150,7 @@ type RemoteServerRef struct {
 }
 
 type Registration struct {
-	RouteCondition
+	RouteCondition `mapstructure:",squash"`
 	Proc  bool
 	Topic bool
 }
@@ -169,10 +170,21 @@ func (s *Server) startRegistrationServer() error {
 		var ok bool
 		reg, ok = in.(Registration)
 		if !ok {
-			if err := mapstructure.Decode(in, &reg); err != nil {
+			fmt.Printf("decoding %v", in)
+			config := &mapstructure.DecoderConfig{
+				ErrorUnused: true,
+				Metadata: nil,
+				Result:   &reg,
+			}
+			decoder, err := mapstructure.NewDecoder(config)
+			if err != nil {
+				return nil, err
+			}
+			if err := decoder.Decode(in); err != nil {
 				return nil, fmt.Errorf("registration server: unexpected type of input %T: %v: %v", in, in, err)
 			}
 		}
+		fmt.Printf("server: registering %v\n", reg)
 		s.Register(reg)
 		return ResponseOK, err
 	}); err != nil {
@@ -236,7 +248,12 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 			log.Fatalf("unable to read body: %v", err)
 		}
 		evt := bufbody.Bytes()
-		url := "http://" + r.Host + "/" + r.URL.Path
+		if strings.Index(r.URL.Path, "/") != 0 {
+			log.Printf("http handler failed: invalid path: path should start with /: %s", r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		url := "http://" + r.Host + r.URL.Path
 		log.Printf("processing request to %s", url)
 		res, err := srv.ProcessEvent(url, evt)
 		if err != nil {
@@ -275,6 +292,8 @@ func (srv *Server) ProcessEvent(sendproc string, evt2 interface{}) ([]byte, erro
 
 	fmt.Printf("score %+v\n", idsAndScores)
 
+	procHandled := false
+
 	for routeCondId, score := range idsAndScores {
 		route := srv.GetRoute(routeCondId)
 		thres := len(route.RouteCondition.Expressions)
@@ -295,10 +314,18 @@ func (srv *Server) ProcessEvent(sendproc string, evt2 interface{}) ([]byte, erro
 		}
 
 		for _, p := range procs {
-			return ProgressiveCall(srv.internalClient.Client, p, evt, 64)
+			_, err := ProgressiveCall(srv.internalClient.Client, p, evt, 64)
+			if err != nil {
+				log.Fatal(err)
+			} else {
+				procHandled = true
+			}
 		}
 	}
-	return []byte(`{"message":"no handler found"}`), nil
+	if procHandled {
+		return []byte(`{"message":"proc handled"`), nil
+	}
+	return []byte(`{"message":"no proc handler found"}`), nil
 }
 
 //func (srv *Server) TestProgressiveCall(procName string, evt []byte) ([]byte, error) {
