@@ -56,26 +56,36 @@ func progressiveCall(caller *client.Client, procedureName string, evt []byte, ch
 		return nil, fmt.Errorf("Failed to call procedure:", err)
 	}
 
+	var res []byte
+
 	// As a final result, the callee returns the base64 encoded sha256 hash of
 	// the data.  This is decoded and compared to the value that the caller
 	// calculated.  If they match, then the caller recieved the data correctly.
-	hashB64 := result.Arguments[0].(string)
-	log.Printf("Received hashB64: %s", hashB64)
-	calleeHash, err := base64.StdEncoding.DecodeString(hashB64)
-	if err != nil {
-		return nil, fmt.Errorf("decode error:", err)
+	if len(result.Arguments) > 0 {
+		hashB64 := result.Arguments[0].(string)
+		log.Printf("Received hashB64: %s", hashB64)
+		calleeHash, err := base64.StdEncoding.DecodeString(hashB64)
+		if err != nil {
+			return nil, fmt.Errorf("decode error:", err)
+		}
+		// Check if received hash matches the hash computed over the received data.
+		if !bytes.Equal(calleeHash, h.Sum(nil)) {
+			return nil, fmt.Errorf("Hash of received data does not match")
+		}
+		res = []byte(strings.Join(chunks, ""))
+	} else {
+		resBody, err := getBodyBytes(result.ArgumentsKw)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get body: %v", err)
+		}
+		res = resBody
 	}
 
-	// Check if received hash matches the hash computed over the received data.
-	if !bytes.Equal(calleeHash, h.Sum(nil)) {
-		return nil, fmt.Errorf("Hash of received data does not match")
-	}
 	log.Println("Correctly received all data:")
 	log.Println("----------------------------")
-	res := strings.Join(chunks, "")
 	log.Println(res)
 
-	return []byte(res), nil
+	return res, nil
 }
 
 func Call(caller *client.Client, procedure string, evt interface{}) (interface{}, error) {

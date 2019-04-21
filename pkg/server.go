@@ -150,7 +150,6 @@ type RemoteServerRef struct {
 }
 
 type Registration struct {
-	FormParameterName string
 	RouteCondition `mapstructure:",squash"`
 	Proc  bool
 	Topic bool
@@ -171,7 +170,7 @@ func (s *Server) startRegistrationServer() error {
 		var ok bool
 		reg, ok = in.(Registration)
 		if !ok {
-			fmt.Printf("decoding %v", in)
+			fmt.Printf("decoding %v\n", in)
 			config := &mapstructure.DecoderConfig{
 				ErrorUnused: true,
 				Metadata: nil,
@@ -256,9 +255,10 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		header := map[string][]string(r.Header)
 		url := "http://" + r.Host + r.URL.Path
 		log.Printf("processing request to %s", url)
-		res, err := srv.ProcessEvent(url, httpReqBody)
+		res, err := srv.ProcessEvent(Event{Channel: url, Body: httpReqBody, Header: header})
 		if err != nil {
 			log.Printf("http handler failed: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -273,11 +273,21 @@ func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) 
 	}
 }
 
-func (srv *Server) ProcessEvent(sendproc string, body []byte) ([]byte, error) {
+type Event struct {
+	Channel string
+	Body []byte
+	Header map[string][]string
+}
+
+func (srv *Server) ProcessEvent(evt Event) ([]byte, error) {
+	sendproc := evt.Channel
+	body := evt.Body
+	header := evt.Header
 	log.Printf("Processing event: %s", body)
 
-	if err := srv.internalClient.Publish(sendproc, nil, wamp.List{}, wamp.Dict{"body": body}); err != nil {
-		log.Fatal(err)
+	kwargs := wamp.Dict{"body": body, "header": header}
+	if err := srv.internalClient.Publish(sendproc, nil, wamp.List{}, kwargs); err != nil {
+		log.Fatalf("publish failed: %v", err)
 	}
 
 	idsAndScores, err := srv.SearchRouteMatchesChannelAndJSON(sendproc, body)
@@ -299,7 +309,7 @@ func (srv *Server) ProcessEvent(sendproc string, body []byte) ([]byte, error) {
 		procs := route.Procedures
 		fmt.Printf("publishing to %s\n", topics)
 		for _, t := range topics {
-			if err := srv.internalClient.Publish(t, nil, wamp.List{}, wamp.Dict{"body": body}); err != nil {
+			if err := srv.internalClient.Publish(t, nil, wamp.List{}, kwargs); err != nil {
 				log.Fatal(err)
 			}
 		}

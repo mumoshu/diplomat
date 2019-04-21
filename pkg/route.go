@@ -25,6 +25,7 @@ type Expr struct {
 	Path   []string
 	String *string
 	Int *int
+	All bool
 }
 
 type RouteCondition struct {
@@ -77,9 +78,11 @@ func (m RouteCondition) ID() RouteConditionID {
 		if c.Int != nil {
 			v = strconv.Itoa(*c.Int)
 		}
-		k := strings.Join(c.Path, ".")
-		d[k] = v
-		keys = append(keys, k)
+		if v != "" {
+			k := strings.Join(c.Path, ".")
+			d[k] = v
+			keys = append(keys, k)
+		}
 	}
 	sort.Strings(keys)
 	idparts := []string{}

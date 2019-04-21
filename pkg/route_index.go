@@ -13,6 +13,7 @@ import (
 type Matcher struct {
 	String           *string
 	Int              *int
+	All              bool
 	RouteConditionID RouteConditionID
 }
 
@@ -57,6 +58,7 @@ func (idx *ContentBasedRouteIndex) Index(r *Route) {
 		m := &Matcher{
 			String:           cond.String,
 			Int:              cond.Int,
+			All:              cond.All,
 			RouteConditionID: id,
 		}
 		node := idx.getNode(cond.Path)
@@ -144,6 +146,7 @@ func (idx *RouteIndex) SearchRouteMatchesChannelAndJSON(ch string, data []byte) 
 				continue
 			}
 			vAsJson, err := url.QueryUnescape(v)
+			fmt.Printf("unescaped: %s\n", vAsJson)
 			score, err := idx2.SearchRouteMatchesJSON([]byte(vAsJson))
 			if len(score) > 0 {
 				return score, err
@@ -168,6 +171,10 @@ func (node *Node) search(ctx *SearchContext, v *fastjson.Value) (map[RouteCondit
 		return ctx.Scores, nil
 	}
 	for _, m := range node.Matchers {
+		if m.All {
+			ctx.Scores[m.RouteConditionID] += 1
+		}
+
 		if m.String != nil {
 			if strv == nil {
 				strbytes := v.GetStringBytes()

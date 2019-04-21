@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gammazero/nexus/wamp"
 	"log"
+	"net/http"
 )
 
 func getBodyBytes(kwargs wamp.Dict) ([]byte, error) {
@@ -22,6 +23,27 @@ func getBodyBytes(kwargs wamp.Dict) ([]byte, error) {
 		}
 	}
 	return bs, nil
+}
+
+func getHttpHeader(kwargs wamp.Dict) http.Header {
+	if kwargs["header"] != nil {
+		switch typed := kwargs["header"].(type) {
+		case map[string]interface{}:
+			header := http.Header{}
+			for k, v := range typed {
+				sli := v.([]interface{})
+				vs := []string{}
+				for _, v := range sli {
+					vs = append(vs, v.(string))
+				}
+				header[k] = vs
+			}
+			return header
+		default:
+			panic(fmt.Sprintf("unexpected type of header %T: %v", typed, typed))
+		}
+	}
+	return http.Header{}
 }
 
 func PrintingHandler(subId, topic string) func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {

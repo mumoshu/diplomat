@@ -49,7 +49,7 @@ func main() {
 	evt := []byte(`{"foo":{"id":1}}`)
 
 	{
-		_, err := srv.ProcessEvent(echoSendChName, evt)
+		_, err := srv.ProcessEvent(diplomat.Event{Channel: echoSendChName, Body: evt})
 		if err != nil {
 			log.Fatalf("TestProgressiveCall failed: %v", err)
 		}
@@ -126,7 +126,7 @@ func main() {
 	}
 	log.Printf("%s subscribed to %s", sub2Id, echoReceiveAllChName)
 
-	res1, err := srv.ProcessEvent(api.DiplomatEchoChan.SendChannelURL(), evt)
+	res1, err := srv.ProcessEvent(diplomat.Event{Channel: api.DiplomatEchoChan.SendChannelURL(), Body: evt})
 	if err != nil {
 		log.Fatalf("err: %v", err)
 	}
