@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/nlopes/slack"
@@ -40,7 +41,7 @@ func (h InteractionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var message slack.AttachmentActionCallback
+	var message slack.InteractionCallback
 	if err := json.Unmarshal([]byte(jsonStr), &message); err != nil {
 		log.Printf("[ERROR] Failed to decode json message from slack: %s", jsonStr)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -77,6 +78,8 @@ func (h InteractionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				Style: "danger",
 			},
 		}
+		// Otherwise subsequent interactive message like actionStart, actionCancel misses "original_message"!
+		originalMessage.ReplaceOriginal = true
 
 		w.Header().Add("Content-type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -100,6 +103,7 @@ func (h InteractionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // responseMessage response to the original slackbutton enabled message.
 // It removes button and replace it with message which indicate how bot will work
 func responseMessage(w http.ResponseWriter, original slack.Message, title, value string) {
+	fmt.Fprintf(os.Stderr, "original: %+v\n", original)
 	original.Attachments[0].Actions = []slack.AttachmentAction{} // empty buttons
 	original.Attachments[0].Fields = []slack.AttachmentField{
 		{

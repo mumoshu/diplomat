@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/wamp"
@@ -13,26 +12,16 @@ import (
 	"strings"
 )
 
-func ProgressiveCall(caller *client.Client, procedureName string, evt interface{}, chunkSize int) ([]byte, error) {
-	var bs []byte
-	switch typed := evt.(type) {
-	case []byte:
-		bs = typed
-	case string:
-		bs = []byte(typed)
-	case int, bool, byte:
-		return nil, fmt.Errorf("unsupported type of evt: %T: %v", typed, typed)
-	default:
-		bytes, err := json.Marshal(evt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal evt: %v", err)
-		}
-		bs = bytes
+func ProgressiveCall(caller *client.Client, procedureName string, evt Event, chunkSize int) (*Output, error) {
+	kwargs := eventToKwargs(evt)
+	res, err := progressiveCall(caller, procedureName, kwargs, chunkSize)
+	if err != nil {
+		return nil, fmt.Errorf("progressive call failed: %v", err)
 	}
-	return progressiveCall(caller, procedureName, bs, chunkSize)
+	return kwargsToOutput(res.ArgumentsKw)
 }
 
-func progressiveCall(caller *client.Client, procedureName string, evt []byte, chunkSize int) ([]byte, error) {
+func progressiveCall(caller *client.Client, procedureName string, kwargs wamp.Dict, chunkSize int) (*wamp.Result, error) {
 	// The progress handler accumulates the chunks of data as they arrive.  It
 	// also progressively calculates a sha256 hash of the data as it arrives.
 	var chunks []string
@@ -51,7 +40,7 @@ func progressiveCall(caller *client.Client, procedureName string, evt []byte, ch
 	// Call the example procedure, specifying the size of chunks to send as
 	// progressive results.
 	result, err := caller.CallProgress(
-		ctx, procedureName, nil, wamp.List{chunkSize}, wamp.Dict{"body": evt}, "", progHandler)
+		ctx, procedureName, nil, wamp.List{chunkSize}, kwargs, "", progHandler)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to call procedure:", err)
 	}
@@ -81,11 +70,16 @@ func progressiveCall(caller *client.Client, procedureName string, evt []byte, ch
 		res = resBody
 	}
 
-	log.Println("Correctly received all data:")
-	log.Println("----------------------------")
-	log.Println(res)
+	if result.ArgumentsKw == nil {
+		result.ArgumentsKw = wamp.Dict{}
+	}
+	result.ArgumentsKw["body"] = res
 
-	return res, nil
+	log.Println("Correctly received data from callee:")
+	log.Println("----------------------------")
+	log.Println(string(res))
+
+	return result, nil
 }
 
 func Call(caller *client.Client, procedure string, evt interface{}) (interface{}, error) {

@@ -2,6 +2,7 @@ package diplomat
 
 import (
 	"github.com/nlopes/slack"
+	"github.com/rs/xid"
 )
 
 const (
@@ -21,13 +22,19 @@ type SlackConnection struct {
 	Client *slack.Client
 }
 
+var guid xid.ID
+
+func init() {
+	guid = xid.New()
+}
+
 func (conn SlackConnection) SendSelection(channel string, text string, callbackID string) (string, string, error) {
 	client := conn.Client
 	// value is passed to message handler when request is approved.
 	attachment := slack.Attachment{
 		Text:       text,
 		Color:      "#f9a41b",
-		CallbackID: callbackID,
+		CallbackID: callbackID + guid.String(),
 		Actions: []slack.AttachmentAction{
 			{
 				Name: actionSelect,

@@ -46,7 +46,7 @@ func main() {
 	evt := []byte(`{"foo":{"id":1}}`)
 
 	{
-		_, err := srv.ProcessEvent(diplomat.Event{Channel: echoSendChName, Body: evt})
+		err := srv.Publish(diplomat.Event{Channel: echoSendChName, Body: evt})
 		if err != nil {
 			log.Fatalf("TestProgressiveCall failed: %v", err)
 		}

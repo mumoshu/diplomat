@@ -1,7 +1,6 @@
 package diplomat
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/gammazero/nexus/client"
 	"github.com/gammazero/nexus/router"
@@ -12,7 +11,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -240,46 +238,27 @@ func (s *RemoteServerRef) Connect(name string) (*Client, error) {
 	return &Client{c}, nil
 }
 
-func (srv *Server) CreateHttpHandler() func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		bufbody := new(bytes.Buffer)
-		_, err := bufbody.ReadFrom(r.Body)
-		if err != nil {
-			log.Fatalf("unable to read body: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		httpReqBody := bufbody.Bytes()
-		if strings.Index(r.URL.Path, "/") != 0 {
-			log.Printf("http handler failed: invalid path: path should start with /: %s", r.URL.Path)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		header := map[string][]string(r.Header)
-		url := "http://" + r.Host + r.URL.Path
-		log.Printf("processing request to %s", url)
-		res, err := srv.ProcessEvent(Event{Channel: url, Body: httpReqBody, Header: header})
-		if err != nil {
-			log.Printf("http handler failed: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		log.Printf("handled http request: response = %s", string(res))
-
-		_, err = w.Write(res)
-		if err != nil {
-			panic(fmt.Errorf("unable to write: %v", err))
-		}
-	}
-}
-
 type Event struct {
 	Channel string
 	Body []byte
 	Header map[string][]string
 }
 
-func (srv *Server) ProcessEvent(evt Event) ([]byte, error) {
+type Output struct {
+	Body []byte
+	Header map[string][]string
+	StatusCode int
+}
+
+// Publish emits the event, but do not wait for the result hence returns immediately.
+// Returns non-nil error if event was unable to be published
+func (srv *Server) Publish(evt Event) error {
+	_, err := srv.Call(evt)
+	return err
+}
+
+// Call emits the event and returns the output if the event was handled by any registered callee.
+func (srv *Server) Call(evt Event) (*Output, error) {
 	sendproc := evt.Channel
 	body := evt.Body
 	header := evt.Header
@@ -298,6 +277,7 @@ func (srv *Server) ProcessEvent(evt Event) ([]byte, error) {
 	fmt.Printf("score %+v\n", idsAndScores)
 
 	procHandled := false
+	var out *Output
 
 	for routeCondId, score := range idsAndScores {
 		route := srv.GetRoute(routeCondId)
@@ -318,19 +298,23 @@ func (srv *Server) ProcessEvent(evt Event) ([]byte, error) {
 			log.Fatalf("too many procs: %d", len(procs))
 		}
 
+		if procHandled {
+			continue
+		}
 		for _, p := range procs {
-			_, err := ProgressiveCall(srv.internalClient.Client, p, body, 64)
+			out, err = ProgressiveCall(srv.internalClient.Client, p, evt, 64)
 			if err != nil {
 				log.Fatal(err)
 			} else {
 				procHandled = true
+				break
 			}
 		}
 	}
 	if procHandled {
-		return []byte(`{"message":"proc handled"`), nil
+		return out, nil
 	}
-	return []byte(`{"message":"no proc handler found"}`), nil
+	return &Output{Body: []byte(`{"message":"no proc handler found"}`)}, nil
 }
 
 //func (srv *Server) TestProgressiveCall(procName string, evt []byte) ([]byte, error) {
