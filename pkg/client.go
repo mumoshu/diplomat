@@ -124,6 +124,14 @@ type HttpHandler interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
+type FuncHttpHandler struct {
+	handler func(w http.ResponseWriter, r *http.Request)
+}
+
+func (h FuncHttpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.handler(w, r)
+}
+
 func (c *Client) SubscribeHTTP(url string, cond RouteCondition, handler HttpHandler) error {
 	conf := RouteConfig{RouteCondition: cond, Proc: false, Topic: true,}
 	if err := c.startRouting(conf); err != nil {

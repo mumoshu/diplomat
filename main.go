@@ -150,6 +150,13 @@ func main() {
 	}
 	log.Printf("%s subscribed to %s", sub4Id, cond5.ReceiverName())
 
+	githubWebhookEndpoint := fmt.Sprintf("http://%s/webhook/github", extHost)
+	githubWebhookSecret := os.Getenv("GITHUB_WEBHOOK_SECRET")
+	githubAccessToken := os.Getenv("GITHUB_TOKEN")
+	githubOwner := "mumoshu"
+	githubRepo := "diplomat-test"
+	githubIssueNumber := 1
+
 	go func() {
 		engineCfg := diplomat.NewEngineConfig(srvRef)
 		enableSlack := diplomat.EnableSlack(
@@ -158,8 +165,16 @@ func main() {
 			"#playground",
 			slackVerificationToken,
 		)
+		enableGHIssue := diplomat.EnableGitHubIssue(
+			githubWebhookEndpoint,
+			githubWebhookSecret,
+			githubAccessToken,
+			githubOwner,
+			githubRepo,
+			githubIssueNumber,
+		)
 		wf := &diplomat.MyWorkflow{}
-		engine, err := diplomat.NewWorkflowEngine(engineCfg, enableSlack)
+		engine, err := diplomat.NewWorkflowEngine(engineCfg, enableSlack, enableGHIssue)
 		if err != nil {
 			log.Fatal("workflow engine failed: %v", err)
 		}

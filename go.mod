@@ -22,6 +22,7 @@ require (
 	github.com/fortytw2/leaktest v1.3.0 // indirect
 	github.com/gammazero/nexus v2.1.1-0.20190402111811-fce688586772+incompatible
 	github.com/golang/protobuf v1.3.1 // indirect
+	github.com/google/go-github/v25 v25.0.1
 	github.com/google/pprof v0.0.0-20190404155422-f8f10df84213 // indirect
 	github.com/gorilla/websocket v1.4.0 // indirect
 	github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6 // indirect
@@ -40,5 +41,7 @@ require (
 	golang.org/x/arch v0.0.0-20190312162104-788fe5ffcd8c // indirect
 	golang.org/x/crypto v0.0.0-20190404164418-38d8ce5564a5 // indirect
 	golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3 // indirect
+	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
 	golang.org/x/tools v0.0.0-20190407030857-0fdf0c73855b // indirect
+	gopkg.in/go-playground/webhooks.v5 v5.8.0
 )
