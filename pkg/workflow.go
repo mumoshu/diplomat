@@ -21,7 +21,6 @@ type Workflow struct {
 
 	id string
 	diplomatClient     *Client
-	slackClient        *slack.Client
 	communicationChannels []CommunicationChannel
 }
 
@@ -66,7 +65,6 @@ func StartWorkflow(opts Workflow) error {
 	wf := &Workflow{
 		id:                    wfID,
 		diplomatClient:        cli,
-		slackClient:           slackClient,
 		communicationChannels: comChannels,
 	}
 
