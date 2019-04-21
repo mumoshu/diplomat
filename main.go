@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/mumoshu/diplomat/pkg"
 	"github.com/mumoshu/diplomat/pkg/api"
-	"github.com/nlopes/slack"
 	"log"
 	"os"
 	"os/signal"
@@ -25,7 +24,7 @@ func main() {
 	}
 	defer srvCloser.Close()
 
-	echoWithFooIdEq1 := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(1)
+	echoWithFooIdEq1 := diplomat.On(api.ChannelEcho).Where("foo", "id").EqInt(1)
 	echoSendChName := echoWithFooIdEq1.Channel.SendChannelURL()
 	echoReceiveAllChName := echoWithFooIdEq1.Channel.SendChannelURL()
 
@@ -83,7 +82,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
-	err = subConn.Subscribe(diplomat.On(api.DiplomatEchoChan).All(), printingHandler(receiveAllSub))
+	err = subConn.SubscribeAny(diplomat.On(api.ChannelEcho).All(), printingHandler(receiveAllSub))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
@@ -93,7 +92,7 @@ func main() {
 
 	receiveFooIdEq1Sub := "localEchoReceiveFooBarEq1Subscriber"
 	sub2Conn, err := srv.Connect(receiveFooIdEq1Sub)
-	err = sub2Conn.Subscribe(echoWithFooIdEq1, printingHandler(receiveFooIdEq1Sub))
+	err = sub2Conn.SubscribeAny(echoWithFooIdEq1, printingHandler(receiveFooIdEq1Sub))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
@@ -103,13 +102,13 @@ func main() {
 
 	srvRef := diplomat.NewWsServerRef(realm, netAddr, wsPort)
 
-	echoWithFooIdEq2 := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(2)
+	echoWithFooIdEq2 := diplomat.On(api.ChannelEcho).Where("foo", "id").EqInt(2)
 	wsConn, err := srvRef.Connect(echoWithFooIdEq2.Channel.SendChannelURL() + "Conn")
 	if err != nil {
 		log.Fatalf("Connect failed: %v", err)
 	}
 
-	if err := wsConn.Serve(echoWithFooIdEq2, func(in interface{}) (interface{}, error) {
+	if err := wsConn.ServeAny(echoWithFooIdEq2, func(in interface{}) (interface{}, error) {
 		return in, nil
 	}); err != nil {
 		log.Fatalf("serve failed: %v", err)
@@ -118,7 +117,7 @@ func main() {
 	sub2Id := "githubWebhookHandler"
 	subscriber2, err := srvRef.Connect(sub2Id)
 	cond3 := diplomat.OnURL(fmt.Sprintf("http://%s/webhook/github", extHost)).All()
-	err = subscriber2.Subscribe(cond3, printingHandler(sub2Id))
+	err = subscriber2.SubscribeAny(cond3, printingHandler(sub2Id))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
@@ -126,7 +125,7 @@ func main() {
 
 	sub3Id := "slackWebhookHandler"
 	cond4 := diplomat.OnURL(fmt.Sprintf("http://%s/webhook/slack", extHost)).All()
-	err = subscriber2.Subscribe(cond4, printingHandler(sub3Id))
+	err = subscriber2.SubscribeAny(cond4, printingHandler(sub3Id))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
@@ -136,12 +135,13 @@ func main() {
 	sub4Id := "slackInteractiveComponentsWebhookHandler"
 	slackIntUrl := fmt.Sprintf("http://%s/webhook/slack-interactive", extHost)
 	cond5 := diplomat.OnURL(slackIntUrl).All()
-	slackInteractionsHandler := diplomat.InteractionHandler{
-		SlackClient: slack.New(os.Getenv("BOT_USER_OAUTH_ACCESS_TOKEN")),
+	slackBotToken := os.Getenv("BOT_USER_OAUTH_ACCESS_TOKEN")
+	slackVerificationToken := os.Getenv("VERIFICATION_TOKEN")
+	slackInteractionsHandler := diplomat.SlackInteractionsHttpHandler{
 		// verification token can be obtained at https://api.slack.com/apps/<APP ID>/general?
 		// after creating an slack app
-		VerificationToken: os.Getenv("VERIFICATION_TOKEN"),
-		Srv:               srv,
+		VerificationToken: slackVerificationToken,
+		CallbackID: "mycallback1",
 	}
 	cond5.FormParameterName = "payload"
 	err = subscriber2.ServeHTTP(slackIntUrl, cond5, slackInteractionsHandler)
@@ -149,6 +149,19 @@ func main() {
 		log.Fatal("subscribe error:", err)
 	}
 	log.Printf("%s subscribed to %s", sub4Id, cond5.ReceiverName())
+
+	go func() {
+		wf := diplomat.Workflow{
+			DiplotmatServerRef: srvRef,
+			SlackBotToken: slackBotToken,
+			SlackChannel: "#playground",
+			SlackInteractionsEndpoint: slackIntUrl,
+			SlackVerificationToken: slackVerificationToken,
+		}
+		if err := diplomat.StartWorkflow(wf); err != nil {
+			log.Fatal("workflow failed: %v", err)
+		}
+	}()
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
 	shutdown := make(chan os.Signal, 1)

@@ -2,8 +2,9 @@ package api
 
 import "fmt"
 
-var DiplomatRegisterChan ChannelRef
-var DiplomatEchoChan ChannelRef
+var ChannelStartRouting ChannelRef
+var ChannelStopRouting ChannelRef
+var ChannelEcho ChannelRef
 
 type Scheme string
 
@@ -23,11 +24,15 @@ func (id ChannelRef) String() string {
 }
 
 func init() {
-	DiplomatRegisterChan = ChannelRef{
+	ChannelStartRouting = ChannelRef{
 		Scheme:      SchemeDiplomat,
 		ChannelName: "register",
 	}
-	DiplomatEchoChan = ChannelRef{
+	ChannelStopRouting = ChannelRef{
+		Scheme:      SchemeDiplomat,
+		ChannelName: "stopRouting",
+	}
+	ChannelEcho = ChannelRef{
 		Scheme:      SchemeDiplomat,
 		ChannelName: "echo",
 	}

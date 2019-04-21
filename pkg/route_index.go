@@ -17,6 +17,13 @@ type Matcher struct {
 	RouteConditionID RouteConditionID
 }
 
+func (m *Matcher) Eq(other *Matcher) bool {
+	return ((m.String != nil && other.String != nil && *m.String == *other.String) || m.String == other.String) &&
+		((m.Int != nil && other.Int != nil && *m.Int == *other.Int) || m.Int == other.Int) &&
+		m.RouteConditionID == other.RouteConditionID &&
+		m.All == other.All
+}
+
 type Node struct {
 	Matchers []*Matcher
 
@@ -71,6 +78,32 @@ func (idx *ContentBasedRouteIndex) Index(r *Route) {
 	log.Printf("Index updated: %s", string(dump))
 }
 
+func (idx *ContentBasedRouteIndex) Delete(r *Route) {
+	for _, cond := range r.RouteCondition.Expressions {
+		id := r.ID()
+		del := &Matcher{
+			String:           cond.String,
+			Int:              cond.Int,
+			All:              cond.All,
+			RouteConditionID: id,
+		}
+		node := idx.getNode(cond.Path)
+		matchers := node.Matchers
+		newMatchers := []*Matcher{}
+		for _, m := range matchers {
+			if !m.Eq(del) {
+				newMatchers = append(newMatchers, m)
+			}
+		}
+		node.Matchers = newMatchers
+	}
+	dump, err := json.Marshal(*idx.Root)
+	if err != nil {
+		log.Fatalf("failed to dump index: %v", err)
+	}
+	log.Printf("Index updated (delete): %s", string(dump))
+}
+
 func (idx *ContentBasedRouteIndex) SearchRouteMatchesJSON(data []byte) (map[RouteConditionID]int, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("search failed: empty body")
@@ -123,6 +156,45 @@ func (idx *RouteIndex) Index(r *Route) {
 	}
 }
 
+func (idx *RouteIndex) Delete(r *Route) {
+	ch := r.Channel.SendChannelURL()
+	if idx.SendChannelToJsonHandlerIndex == nil {
+		idx.SendChannelToJsonHandlerIndex = map[string]*ContentBasedRouteIndex{}
+	}
+	if idx.SendChannelToFormParameterHandlerIndex == nil {
+		idx.SendChannelToFormParameterHandlerIndex = map[string]map[string]*ContentBasedRouteIndex{}
+	}
+	if r.FormParameterName == "" {
+		_, ok := idx.SendChannelToJsonHandlerIndex[ch]
+		if !ok {
+			idx.SendChannelToJsonHandlerIndex[ch] = &ContentBasedRouteIndex{
+				Root: &Node{
+					Matchers: []*Matcher{},
+					Children: map[string]*Node{},
+				},
+			}
+		}
+		idx.SendChannelToJsonHandlerIndex[ch].Delete(r)
+	} else {
+		_, ok := idx.SendChannelToFormParameterHandlerIndex[ch]
+		if !ok {
+			idx.SendChannelToFormParameterHandlerIndex[ch] = map[string]*ContentBasedRouteIndex{
+			}
+		}
+		_, ok2 := idx.SendChannelToFormParameterHandlerIndex[ch][r.FormParameterName]
+		if !ok2 {
+			idx2 := &ContentBasedRouteIndex{
+				Root: &Node{
+					Matchers: []*Matcher{},
+					Children: map[string]*Node{},
+				},
+			}
+			idx.SendChannelToFormParameterHandlerIndex[ch][r.FormParameterName] = idx2
+		}
+		idx.SendChannelToFormParameterHandlerIndex[ch][r.FormParameterName].Delete(r)
+	}
+}
+
 func (idx *RouteIndex) SearchRouteMatchesChannelAndJSON(ch string, data []byte) (map[RouteConditionID]int, error) {
 	cidx, ok := idx.SendChannelToJsonHandlerIndex[ch]
 	if !ok {
@@ -170,11 +242,14 @@ func (node *Node) search(ctx *SearchContext, v *fastjson.Value) (map[RouteCondit
 	if !v.Exists() {
 		return ctx.Scores, nil
 	}
-	for _, m := range node.Matchers {
-		if m.All {
-			ctx.Scores[m.RouteConditionID] += 1
+	for key, child := range node.Children {
+		cv := v.Get(key)
+		_, err := child.search(ctx, cv)
+		if err != nil {
+			return nil, err
 		}
-
+	}
+	for _, m := range node.Matchers {
 		if m.String != nil {
 			if strv == nil {
 				strbytes := v.GetStringBytes()
@@ -200,11 +275,11 @@ func (node *Node) search(ctx *SearchContext, v *fastjson.Value) (map[RouteCondit
 			}
 		}
 	}
-	for key, child := range node.Children {
-		cv := v.Get(key)
-		_, err := child.search(ctx, cv)
-		if err != nil {
-			return nil, err
+	if len(ctx.Scores) == 0 {
+		for _, m := range node.Matchers {
+			if m.All {
+				ctx.Scores[m.RouteConditionID] += 1
+			}
 		}
 	}
 	return ctx.Scores, nil

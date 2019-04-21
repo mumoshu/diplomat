@@ -14,13 +14,12 @@ import (
 )
 
 // interactionHandler handles interactive message response.
-type InteractionHandler struct {
-	SlackClient       *slack.Client
+type SlackInteractionsHttpHandler struct {
 	VerificationToken string
-	Srv               *Server
+	CallbackID string
 }
 
-func (h InteractionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h SlackInteractionsHttpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[ERROR] Invalid method: %s", r.Method)
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -44,6 +43,12 @@ func (h InteractionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var message slack.InteractionCallback
 	if err := json.Unmarshal([]byte(jsonStr), &message); err != nil {
 		log.Printf("[ERROR] Failed to decode json message from slack: %s", jsonStr)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if message.CallbackID != h.CallbackID {
+		log.Printf("[ERROR] Unexpected callback id %s: expected %s. Perhaps the non-default route is inexistent for that callback id?", message.CallbackID, h.CallbackID)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

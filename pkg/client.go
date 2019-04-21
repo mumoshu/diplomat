@@ -8,70 +8,8 @@ import (
 	"github.com/mumoshu/diplomat/pkg/api"
 	"log"
 	"net/http"
-	"net/url"
 	"time"
 )
-
-type CondBuilder struct {
-	Channel api.ChannelRef
-	Path    []string
-}
-
-func On(ch api.ChannelRef) CondBuilder {
-	return CondBuilder{
-		Channel: ch,
-	}
-}
-
-func OnURL(u string) CondBuilder {
-	parsed, err := url.Parse(u)
-	if err != nil {
-		panic(err)
-	}
-	return CondBuilder{
-		Channel: api.ChannelRef{
-			Scheme:      api.Scheme(parsed.Scheme),
-			ChannelName: fmt.Sprintf("%s%s", parsed.Host, parsed.Path),
-		},
-	}
-}
-
-func (b CondBuilder) All() RouteCondition {
-	c := RouteCondition{
-		Channel: b.Channel,
-	}
-	c.Expressions = []Expr{{Path: b.Path, All: true}}
-	return c
-}
-
-func (b CondBuilder) Where(path ...string) CondBuilder {
-	b.Path = path
-	return b
-}
-
-func (b CondBuilder) EqInt(v int) RouteCondition {
-	c := RouteCondition{
-		Channel: b.Channel,
-	}
-	if b.Path != nil {
-		c.Expressions = []Expr{{Path: b.Path, Int: &v}}
-	} else {
-		c.Expressions = []Expr{}
-	}
-	return c
-}
-
-func (b CondBuilder) EqString(s string) RouteCondition {
-	c := RouteCondition{
-		Channel: b.Channel,
-	}
-	if b.Path != nil {
-		c.Expressions = []Expr{{Path: b.Path, String: &s}}
-	} else {
-		c.Expressions = []Expr{}
-	}
-	return c
-}
 
 type Client struct {
 	*client.Client
@@ -83,17 +21,42 @@ type Client struct {
 //}
 //
 
-func (c *Client) Register(reg Registration) error {
+func (c *Client) startRouting(reg RouteConfig) error {
 	fmt.Printf("client: registering %v\n", reg)
-	_, err := Call(c.Client, api.DiplomatRegisterChan.SendChannelURL(), reg)
+	_, err := Call(c.Client, api.ChannelStartRouting.SendChannelURL(), reg)
 	if err != nil {
 		return fmt.Errorf("registration failed: %v", err)
 	}
 	return nil
 }
 
-func (c *Client) Serve(cond RouteCondition, f func(in interface{}) (interface{}, error)) error {
-	if err := c.Register(Registration{RouteCondition: cond, Proc: true, Topic: false}); err != nil {
+func (c *Client) stopRouting(reg RouteConfig) error {
+	fmt.Printf("client: stopping routing %v\n", reg)
+	_, err := Call(c.Client, api.ChannelStopRouting.SendChannelURL(), reg)
+	if err != nil {
+		return fmt.Errorf("stopping routing failed: %v", err)
+	}
+	return nil
+}
+
+func (c *Client) StopServing(cond RouteCondition) error {
+	proc := cond.ReceiverName()
+	if err := c.Unregister(proc); err != nil {
+		return fmt.Errorf("failed to unregister %s: %v", proc, err)
+	}
+	return c.stopRouting(RouteConfig{RouteCondition: cond, Proc: true, Topic: false})
+}
+
+func (c *Client) StopSubscription(cond RouteCondition) error {
+	topic := cond.ReceiverName()
+	if err := c.Unsubscribe(topic); err != nil {
+		return fmt.Errorf("failed to unsubscribe %s: %v", topic, err)
+	}
+	return c.stopRouting(RouteConfig{RouteCondition: cond, Proc: false, Topic: true})
+}
+
+func (c *Client) ServeAny(cond RouteCondition, f func(in interface{}) (interface{}, error)) error {
+	if err := c.startRouting(RouteConfig{RouteCondition: cond, Proc: true, Topic: false}); err != nil {
 		return fmt.Errorf("registration failed: %v", err)
 	}
 	return c.serve(cond, f)
@@ -101,7 +64,7 @@ func (c *Client) Serve(cond RouteCondition, f func(in interface{}) (interface{},
 
 func (c *Client) serve(cond RouteCondition, f func(in interface{}) (interface{}, error)) error {
 	cli := c.Client
-	handler := c.FuncProcHandler(f)
+	handler := c.anyFuncToProcHandler(f)
 	ch := cond.Channel
 	proc := cond.ReceiverName()
 	if err := cli.Register(proc, handler, make(wamp.Dict)); err != nil {
@@ -112,7 +75,7 @@ func (c *Client) serve(cond RouteCondition, f func(in interface{}) (interface{},
 	return nil
 }
 
-func (c *Client) FuncProcHandler(f func(in interface{}) (interface{}, error)) func(context.Context, wamp.List, wamp.Dict, wamp.Dict) *client.InvokeResult {
+func (c *Client) anyFuncToProcHandler(f func(in interface{}) (interface{}, error)) func(context.Context, wamp.List, wamp.Dict, wamp.Dict) *client.InvokeResult {
 	return func(ctx context.Context, args wamp.List, kwargs wamp.Dict, details wamp.Dict) *client.InvokeResult {
 		req := args[0]
 		res, err := f(req)
@@ -123,7 +86,7 @@ func (c *Client) FuncProcHandler(f func(in interface{}) (interface{}, error)) fu
 	}
 }
 
-func (c *Client) FuncSubHandler(f func(in interface{})) client.EventHandler {
+func (c *Client) anyFuncToSubscriptionHandler(f func(in interface{})) client.EventHandler {
 	return func(args wamp.List, kwargs wamp.Dict, details wamp.Dict) {
 		req := kwargs["body"]
 		f(req)
@@ -131,25 +94,25 @@ func (c *Client) FuncSubHandler(f func(in interface{})) client.EventHandler {
 }
 
 func (c *Client) ServeWithProgress(cond RouteCondition, f func(evt []byte) ([]byte, error)) (<-chan struct{}, error) {
-	reg := Registration{RouteCondition: cond, Proc: true, Topic: false,}
-	if err := c.Register(reg); err != nil {
+	reg := RouteConfig{RouteCondition: cond, Proc: true, Topic: false,}
+	if err := c.startRouting(reg); err != nil {
 		log.Fatalf("registration failed 1: %v", err)
 	}
 
 	return c.listenAndServeWithProgress(cond, f)
 }
 
-func (c *Client) Subscribe(cond RouteCondition, f func(evt interface{})) error {
-	reg := Registration{RouteCondition: cond, Proc: false, Topic: true,}
-	if err := c.Register(reg); err != nil {
+func (c *Client) SubscribeAny(cond RouteCondition, f func(evt interface{})) error {
+	reg := RouteConfig{RouteCondition: cond, Proc: false, Topic: true,}
+	if err := c.startRouting(reg); err != nil {
 		log.Fatalf("subscription registration failed : %v", err)
 	}
 
-	return c.subscribe(cond, f)
+	return c.subscribeAny(cond, f)
 }
 
-func (c *Client) subscribe(cond RouteCondition, f func(evt interface{})) error {
-	err := c.Client.Subscribe(cond.ReceiverName(), c.FuncSubHandler(f), nil)
+func (c *Client) subscribeAny(cond RouteCondition, f func(evt interface{})) error {
+	err := c.Client.Subscribe(cond.ReceiverName(), c.anyFuncToSubscriptionHandler(f), nil)
 	if err != nil {
 		return fmt.Errorf("subscription failed:", err)
 	}
@@ -162,8 +125,8 @@ type HttpHandler interface {
 }
 
 func (c *Client) SubscribeHTTP(url string, cond RouteCondition, handler HttpHandler) error {
-	reg := Registration{RouteCondition: cond, Proc: false, Topic: true,}
-	if err := c.Register(reg); err != nil {
+	conf := RouteConfig{RouteCondition: cond, Proc: false, Topic: true,}
+	if err := c.startRouting(conf); err != nil {
 		log.Fatalf("slack subscription registration failed : %v", err)
 	}
 
@@ -171,8 +134,8 @@ func (c *Client) SubscribeHTTP(url string, cond RouteCondition, handler HttpHand
 }
 
 func (c *Client) ServeHTTP(url string, cond RouteCondition, handler HttpHandler) error {
-	reg := Registration{RouteCondition: cond, Proc: true, Topic: false}
-	if err := c.Register(reg); err != nil {
+	conf := RouteConfig{RouteCondition: cond, Proc: true, Topic: false}
+	if err := c.startRouting(conf); err != nil {
 		return fmt.Errorf("slack serve registration failed: %v", err)
 	}
 	return c.serveHttp(url, cond, handler)

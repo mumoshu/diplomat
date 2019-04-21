@@ -28,7 +28,7 @@ func main() {
 	}
 	defer srvCloser.Close()
 
-	echoWithFooIdEq1 := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(1)
+	echoWithFooIdEq1 := diplomat.On(api.ChannelEcho).Where("foo", "id").EqInt(1)
 	echoSendChName := echoWithFooIdEq1.Channel.SendChannelURL()
 	echoReceiveAllChName := echoWithFooIdEq1.Channel.SendChannelURL()
 
@@ -86,7 +86,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
-	err = subConn.Subscribe(diplomat.On(api.DiplomatEchoChan).All(), printingHandler(receiveAllSub))
+	err = subConn.SubscribeAny(diplomat.On(api.ChannelEcho).All(), printingHandler(receiveAllSub))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
@@ -96,7 +96,7 @@ func main() {
 
 	receiveFooIdEq1Sub := "localEchoReceiveFooBarEq1Subscriber"
 	sub2Conn, err := srv.Connect(receiveFooIdEq1Sub)
-	err = sub2Conn.Subscribe(echoWithFooIdEq1, printingHandler(receiveFooIdEq1Sub))
+	err = sub2Conn.SubscribeAny(echoWithFooIdEq1, printingHandler(receiveFooIdEq1Sub))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
@@ -106,13 +106,13 @@ func main() {
 
 	srvRef := diplomat.NewWsServerRef(realm, netAddr, wsPort)
 
-	echoWithFooIdEq2 := diplomat.On(api.DiplomatEchoChan).Where("foo", "id").EqInt(2)
+	echoWithFooIdEq2 := diplomat.On(api.ChannelEcho).Where("foo", "id").EqInt(2)
 	wsConn, err := srvRef.Connect(echoWithFooIdEq2.Channel.SendChannelURL() + "Conn")
 	if err != nil {
 		log.Fatalf("Connect failed: %v", err)
 	}
 
-	if err := wsConn.Serve(echoWithFooIdEq2, func(in interface{}) (interface{}, error) {
+	if err := wsConn.ServeAny(echoWithFooIdEq2, func(in interface{}) (interface{}, error) {
 		return in, nil
 	}); err != nil {
 		log.Fatalf("serve failed: %v", err)
@@ -120,13 +120,13 @@ func main() {
 
 	sub2Id := "websocketEchoReceiveAllSubscriber"
 	subscriber2, err := srvRef.Connect(sub2Id)
-	err = subscriber2.Subscribe(diplomat.On(api.DiplomatEchoChan).All(), printingHandler(sub2Id))
+	err = subscriber2.SubscribeAny(diplomat.On(api.ChannelEcho).All(), printingHandler(sub2Id))
 	if err != nil {
 		log.Fatal("subscribe error:", err)
 	}
 	log.Printf("%s subscribed to %s", sub2Id, echoReceiveAllChName)
 
-	res1, err := srv.Call(diplomat.Event{Channel: api.DiplomatEchoChan.SendChannelURL(), Body: evt})
+	res1, err := srv.Call(diplomat.Event{Channel: api.ChannelEcho.SendChannelURL(), Body: evt})
 	if err != nil {
 		log.Fatalf("err: %v", err)
 	}

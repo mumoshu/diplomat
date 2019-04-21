@@ -147,7 +147,7 @@ type RemoteServerRef struct {
 	URL   string
 }
 
-type Registration struct {
+type RouteConfig struct {
 	RouteCondition `mapstructure:",squash"`
 	Proc  bool
 	Topic bool
@@ -163,10 +163,10 @@ func (s *Server) startRegistrationServer() error {
 	// Registration Server
 
 	ResponseOK := "OK"
-	if err := localRegistrationServerConn.serve(On(api.DiplomatRegisterChan).All(), func(in interface{}) (interface{}, error) {
-		var reg Registration
+	if err := localRegistrationServerConn.serve(On(api.ChannelStartRouting).All(), func(in interface{}) (interface{}, error) {
+		var reg RouteConfig
 		var ok bool
-		reg, ok = in.(Registration)
+		reg, ok = in.(RouteConfig)
 		if !ok {
 			fmt.Printf("decoding %v\n", in)
 			config := &mapstructure.DecoderConfig{
@@ -183,11 +183,38 @@ func (s *Server) startRegistrationServer() error {
 			}
 		}
 		fmt.Printf("server: registering %v\n", reg)
-		s.Register(reg)
+		s.StartRouting(reg)
 		return ResponseOK, err
 	}); err != nil {
 		return err
 	}
+
+	if err := localRegistrationServerConn.serve(On(api.ChannelStopRouting).All(), func(in interface{}) (interface{}, error) {
+		var reg RouteConfig
+		var ok bool
+		reg, ok = in.(RouteConfig)
+		if !ok {
+			fmt.Printf("decoding %v\n", in)
+			config := &mapstructure.DecoderConfig{
+				ErrorUnused: true,
+				Metadata: nil,
+				Result:   &reg,
+			}
+			decoder, err := mapstructure.NewDecoder(config)
+			if err != nil {
+				return nil, err
+			}
+			if err := decoder.Decode(in); err != nil {
+				return nil, fmt.Errorf("registration server: unexpected type of input %T: %v: %v", in, in, err)
+			}
+		}
+		fmt.Printf("server: stopping route %v\n", reg)
+		s.StopRouting(reg)
+		return ResponseOK, err
+	}); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -205,7 +232,7 @@ func (s *Server) Connect(name string) (*Client, error) {
 	return &Client{c}, nil
 }
 
-func (srv *Server) Register(reg Registration) {
+func (srv *Server) StartRouting(reg RouteConfig) {
 	if reg.Proc {
 		srv.AddConditionalRouteToProcedure(reg.RouteCondition)
 	}
@@ -215,6 +242,18 @@ func (srv *Server) Register(reg Registration) {
 	log.Printf("Route added: %v", reg.RouteCondition)
 	route := srv.GetRoute(reg.RouteCondition)
 	srv.Index(route)
+}
+
+func (srv *Server) StopRouting(reg RouteConfig) {
+	if reg.Proc {
+		srv.DelConditionalRouteToProcedure(reg.RouteCondition)
+	}
+	if reg.Topic {
+		srv.DelConditionalRouteToTopic(reg.RouteCondition)
+	}
+	log.Printf("Route deleted: %v", reg.RouteCondition)
+	route := srv.GetRoute(reg.RouteCondition)
+	srv.Delete(route)
 }
 
 func NewWsServerRef(realm, host string, port int) *RemoteServerRef {
@@ -304,7 +343,7 @@ func (srv *Server) Call(evt Event) (*Output, error) {
 		for _, p := range procs {
 			out, err = ProgressiveCall(srv.internalClient.Client, p, evt, 64)
 			if err != nil {
-				log.Fatal(err)
+				log.Printf("progressive call failed. continuing in case there is available callee to respond: %v", err)
 			} else {
 				procHandled = true
 				break
