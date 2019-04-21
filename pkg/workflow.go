@@ -4,78 +4,119 @@ import (
 	"fmt"
 	"github.com/nlopes/slack"
 	"github.com/rs/xid"
-	"os"
 )
 
 func NewID() string {
 	return xid.New().String()
 }
 
-type Workflow struct {
-	DiplotmatServerRef *RemoteServerRef
+type workflowEngineConfig struct {
+	diplotmatServerRef *RemoteServerRef
+}
 
-	SlackBotToken string
-	SlackInteractionsEndpoint string
-	SlackChannel string
-	SlackVerificationToken string
-
-	id string
-	diplomatClient     *Client
+type WorkflowEngine struct {
+	id                    string
+	diplomatClient        *Client
 	communicationChannels []CommunicationChannel
 }
 
-func StartWorkflow(opts Workflow) error {
+type EngineOpt interface {
+	Apply(ApplyContext, *WorkflowEngine)
+}
+
+type SlackConfig struct {
+	SlackBotToken             string
+	SlackInteractionsEndpoint string
+	SlackChannel              string
+	SlackVerificationToken    string
+}
+
+func (cfg SlackConfig) Apply(ctx ApplyContext, engine *WorkflowEngine) {
+	slackClient := slack.New(cfg.SlackBotToken)
+	engine.AddCommunicationChannel(&SlackCommunicationChannel{
+		DiplomatClient:       ctx.DiplomatClient,
+		SlackClient:          slackClient,
+		InteractionsEndpoint: cfg.SlackInteractionsEndpoint,
+		SlackChannel:         cfg.SlackChannel,
+		VerificationToken:    cfg.SlackVerificationToken,
+	})
+}
+
+func EnableSlack(botToken, interactionsEndpoint, channel, verificationToken string) SlackConfig {
+	return SlackConfig{
+		SlackBotToken:             botToken,
+		SlackInteractionsEndpoint: interactionsEndpoint,
+		SlackChannel:              channel,
+		SlackVerificationToken:    verificationToken,
+	}
+}
+
+func NewEngineConfig(srvRef *RemoteServerRef) workflowEngineConfig {
+	return workflowEngineConfig{
+		diplotmatServerRef: srvRef,
+	}
+}
+
+func NewWorkflowEngine(cfg workflowEngineConfig, op ...EngineOpt) (*WorkflowEngine, error) {
 	wfID := NewID()
 
-	srvRef := opts.DiplotmatServerRef
+	srvRef := cfg.diplotmatServerRef
 
 	cli, err := srvRef.Connect(wfID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if opts.SlackBotToken == "" {
-		opts.SlackBotToken = os.Getenv("BOT_USER_OAUTH_ACCESS_TOKEN")
-	}
-
-	if opts.SlackInteractionsEndpoint == "" {
-		return fmt.Errorf("SlackInteractionsEndpoint can not be omitted")
-	}
-
-	if opts.SlackChannel == "" {
-		return fmt.Errorf("SlackChannel can not be omitted")
-	}
-
-	if opts.SlackVerificationToken == "" {
-		return fmt.Errorf("SlackVerificationToken can not be omitted")
-	}
-
-	slackClient := slack.New(opts.SlackBotToken)
-
-	comChannels := []CommunicationChannel{}
-	slackComCh := &SlackCommunicationChannel{
-		DiplomatClient: cli,
-		SlackClient: slackClient,
-		InteractionsEndpoint: opts.SlackInteractionsEndpoint,
-		SlackChannel: opts.SlackChannel,
-		VerificationToken: opts.SlackVerificationToken,
-	}
-	comChannels = append(comChannels, slackComCh)
-
-	wf := &Workflow{
+	engine := &WorkflowEngine{
 		id:                    wfID,
 		diplomatClient:        cli,
-		communicationChannels: comChannels,
+		communicationChannels: []CommunicationChannel{},
 	}
 
-	return wf.Start()
+	for _, o := range op {
+		ctx := ApplyContext{DiplomatClient: cli,}
+		o.Apply(ctx, engine)
+	}
+
+	return engine, nil
+}
+
+type ApplyContext struct {
+	DiplomatClient *Client
+}
+
+type Notification struct {
+	Text string
 }
 
 type Selection struct {
 	Options []string
 }
 
-func (wf *Workflow) Start() error {
+func (wf *WorkflowEngine) AddCommunicationChannel(ch CommunicationChannel) {
+	wf.communicationChannels = append(wf.communicationChannels, ch)
+}
+
+func (wf *WorkflowEngine) Notify(n Notification) error {
+	return wf.communicationChannels[0].Notify(n)
+}
+
+func (wf *WorkflowEngine) Select(sel Selection) (<-chan string, error) {
+	return wf.communicationChannels[0].Select(sel)
+}
+
+type Workflow interface {
+	Run(wf *WorkflowEngine) error
+}
+
+type MyWorkflow struct {
+}
+
+func (me *MyWorkflow) Run(wf *WorkflowEngine) error {
+	if err := wf.Notify(Notification{Text: "workflow starting!"}); err != nil {
+		return err
+	}
+
 	selection, err := wf.Select(Selection{Options: []string{"foo", "bar"}})
 	if err != nil {
 		return err
@@ -89,11 +130,8 @@ func (wf *Workflow) Start() error {
 	return nil
 }
 
-func (wf *Workflow) Select(sel Selection) (<-chan string, error) {
-	return wf.communicationChannels[0].Select(sel)
-}
-
 type CommunicationChannel interface {
+	Notify(n Notification) error
 	Select(sel Selection) (<-chan string, error)
 }
 
@@ -103,6 +141,23 @@ type SlackCommunicationChannel struct {
 	InteractionsEndpoint string
 	SlackChannel         string
 	VerificationToken    string
+}
+
+func (comch *SlackCommunicationChannel) Notify(n Notification) error {
+	attachment := slack.Attachment{
+		Text:  n.Text,
+		Color: "#f9a41b",
+	}
+	params := slack.PostMessageParameters{
+		Markdown: true,
+	}
+
+	respChannel, respTs, err := comch.SlackClient.PostMessage(comch.SlackChannel, slack.MsgOptionPostMessageParameters(params), slack.MsgOptionAttachments(attachment))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("respCHannel=%s, respTs=%s", respChannel, respTs)
+	return nil
 }
 
 func (comch *SlackCommunicationChannel) Select(sel Selection) (<-chan string, error) {

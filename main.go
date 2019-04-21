@@ -151,15 +151,20 @@ func main() {
 	log.Printf("%s subscribed to %s", sub4Id, cond5.ReceiverName())
 
 	go func() {
-		wf := diplomat.Workflow{
-			DiplotmatServerRef: srvRef,
-			SlackBotToken: slackBotToken,
-			SlackChannel: "#playground",
-			SlackInteractionsEndpoint: slackIntUrl,
-			SlackVerificationToken: slackVerificationToken,
+		engineCfg := diplomat.NewEngineConfig(srvRef)
+		enableSlack := diplomat.EnableSlack(
+			slackBotToken,
+			slackIntUrl,
+			"#playground",
+			slackVerificationToken,
+		)
+		wf := &diplomat.MyWorkflow{}
+		engine, err := diplomat.NewWorkflowEngine(engineCfg, enableSlack)
+		if err != nil {
+			log.Fatal("workflow engine failed: %v", err)
 		}
-		if err := diplomat.StartWorkflow(wf); err != nil {
-			log.Fatal("workflow failed: %v", err)
+		if err := wf.Run(engine); err != nil {
+			log.Fatal("workflow run failed: %v", err)
 		}
 	}()
 
