@@ -206,11 +206,12 @@ func (comch *SlackCommunicationChannel) Select(sel Selection) (<-chan string, er
 	// Wait for selection
 	condition := OnURL(comch.InteractionsEndpoint).Parameter("payload").Where("callback_id").EqString(jobID)
 	handler := func(interaction slack.InteractionCallback) (*slack.Message, error) {
-		selected := interaction.Actions[0].Name
+		selected := interaction.Actions[0].SelectedOptions[0].Value
 		ch <- selected
 		response := interaction.OriginalMessage
 		response.ReplaceOriginal = true
 		response.Text = fmt.Sprintf("selected %s", selected)
+		response.Attachments = []slack.Attachment{}
 
 		if err := comch.DiplomatClient.StopServing(condition); err != nil {
 			return nil, err
