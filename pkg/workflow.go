@@ -193,27 +193,6 @@ type Workflow interface {
 	Run(wf *WorkflowEngine) error
 }
 
-type MyWorkflow struct {
-}
-
-func (me *MyWorkflow) Run(wf *WorkflowEngine) error {
-	if err := wf.Notify(Notification{Text: "workflow starting!"}); err != nil {
-		return err
-	}
-
-	selection, err := wf.Select(Selection{Options: []string{"foo", "bar"}})
-	if err != nil {
-		return err
-	}
-
-	select {
-	case sel := <-selection:
-		fmt.Printf("selected: %s\n", sel)
-	}
-
-	return nil
-}
-
 type CommunicationChannel interface {
 	Notify(n Notification) error
 	Select(sel Selection) (<-chan string, error)

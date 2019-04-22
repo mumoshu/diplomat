@@ -135,7 +135,7 @@ func main() {
 	sub4Id := "slackInteractiveComponentsWebhookHandler"
 	slackIntUrl := fmt.Sprintf("http://%s/webhook/slack-interactive", extHost)
 	cond5 := diplomat.OnURL(slackIntUrl).All()
-	slackBotToken := os.Getenv("BOT_USER_OAUTH_ACCESS_TOKEN")
+	//slackBotToken := os.Getenv("BOT_USER_OAUTH_ACCESS_TOKEN")
 	slackVerificationToken := os.Getenv("VERIFICATION_TOKEN")
 	slackInteractionsHandler := diplomat.SlackInteractionsHttpHandler{
 		// verification token can be obtained at https://api.slack.com/apps/<APP ID>/general?
@@ -149,39 +149,6 @@ func main() {
 		log.Fatal("subscribe error:", err)
 	}
 	log.Printf("%s subscribed to %s", sub4Id, cond5.ReceiverName())
-
-	githubWebhookEndpoint := fmt.Sprintf("http://%s/webhook/github", extHost)
-	githubWebhookSecret := os.Getenv("GITHUB_WEBHOOK_SECRET")
-	githubAccessToken := os.Getenv("GITHUB_TOKEN")
-	githubOwner := "mumoshu"
-	githubRepo := "diplomat-test"
-	githubIssueNumber := 1
-
-	go func() {
-		engineCfg := diplomat.NewEngineConfig(srvRef)
-		enableSlack := diplomat.EnableSlack(
-			slackBotToken,
-			slackIntUrl,
-			"#playground",
-			slackVerificationToken,
-		)
-		enableGHIssue := diplomat.EnableGitHubIssue(
-			githubWebhookEndpoint,
-			githubWebhookSecret,
-			githubAccessToken,
-			githubOwner,
-			githubRepo,
-			githubIssueNumber,
-		)
-		wf := &diplomat.MyWorkflow{}
-		engine, err := diplomat.NewWorkflowEngine(engineCfg, enableSlack, enableGHIssue)
-		if err != nil {
-			log.Fatal("workflow engine failed: %v", err)
-		}
-		if err := wf.Run(engine); err != nil {
-			log.Fatal("workflow run failed: %v", err)
-		}
-	}()
 
 	// Wait for SIGINT (CTRL-c), then close servers and exit.
 	shutdown := make(chan os.Signal, 1)
