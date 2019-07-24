@@ -3,6 +3,7 @@ package diplomat
 import (
 	"context"
 	"fmt"
+	"github.com/codeskyblue/go-sh"
 	"github.com/nlopes/slack"
 	"github.com/rs/xid"
 	"gopkg.in/go-playground/webhooks.v5/github"
@@ -26,6 +27,8 @@ type WorkflowEngine struct {
 	id                    string
 	diplomatClient        *Client
 	communicationChannels []CommunicationChannel
+
+	storage *JobOutputStore
 }
 
 type EngineOpt interface {
@@ -123,6 +126,7 @@ func NewWorkflowEngine(cfg workflowEngineConfig, op ...EngineOpt) (*WorkflowEngi
 		id:                    wfID,
 		diplomatClient:        cli,
 		communicationChannels: []CommunicationChannel{},
+		storage:               NewJobOutputStore(),
 	}
 
 	for _, o := range op {
@@ -187,6 +191,103 @@ func (wf *WorkflowEngine) Select(sel Selection) (<-chan string, error) {
 		results = append(results, res)
 	}
 	return mergeChannels(results), nil
+}
+
+func (wf *WorkflowEngine) RunJob(f func() (*Output, error)) (*Output, error) {
+	return f()
+}
+
+func (wf *WorkflowEngine) Serve(ch string, cond string, func(ctx *WorkflowContext) error) error {
+	ctx := &
+}
+
+type WorkflowContext struct {
+	engine *WorkflowEngine
+	parent *WorkflowContext
+	name   string
+}
+
+func eventToWorkflow(evt Event, wfName string) *WorkflowContext {
+	return &WorkflowContext{
+		name: evt.ID() + wfName,
+	}
+}
+
+func (c *WorkflowContext) Spawn(subWfName string, f func(*WorkflowContext) (*Output, error)) (*Output, error) {
+	child := c.createChildContext(subWfName)
+	id := child.id()
+	out, err := c.engine.storage.RestoreJobResult(id)
+	if out != nil {
+		return out, nil
+	}
+	out, err = f(child)
+	if err == nil {
+		if err := c.engine.storage.SaveJobResult(id, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, err
+}
+
+func (c *WorkflowContext) createChildContext(subWfName string) *WorkflowContext {
+	return &WorkflowContext{
+		engine: c.engine,
+		parent: c,
+		name: subWfName,
+	}
+}
+
+func (c *WorkflowContext) RunJob(name string, f func(ctx *WorkflowContext) (*Output, error)) (*Output, error) {
+	return c.Spawn(name, func(subCtx *WorkflowContext) (*Output, error) {
+		ff := func() (*Output, error) {
+			return f(subCtx)
+		}
+		return c.engine.RunJob(ff)
+	})
+}
+
+func (c *WorkflowContext) Command(name string, a ...interface{}) *sh.Session {
+	return sh.Command(name, a...)
+}
+
+func (c *WorkflowContext) Notify(n Notification) error {
+	_, err := c.Spawn(n.ToName(), func(ctx *WorkflowContext) (*Output, error) {
+		if err := c.engine.Notify(n); err != nil {
+			return nil, err
+		}
+		return &Output{}, nil
+	})
+	return err
+}
+
+func (c *WorkflowContext) Select(sel Selection) (<-chan string, error) {
+	ch := make(chan string)
+	out, err := c.Spawn(sel.ToName(), func(ctx *WorkflowContext) (*Output, error) {
+		subch, err := c.engine.Select(sel)
+		if err != nil {
+			return nil, err
+		}
+		var v string
+		select {
+		case v = <-subch:
+
+		}
+		return &Output{Body: []byte(v)}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	ch <- string(out.Body)
+	return ch, err
+}
+
+func (c *WorkflowContext) id() string {
+	var id string
+	if c.parent != nil {
+		id = c.parent.name
+	}
+	id = id + c.name
+	return id
 }
 
 type Workflow interface {

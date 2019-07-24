@@ -58,14 +58,17 @@ type myBespokeWorkflow struct{
 }
 
 func (wf *myBespokeWorkflow) Run(engine *d.WorkflowEngine) error {
-	engine.Subscribe(wf.triggerURL, "body.json containers foo.bar=1", func(event d.Event) error {
+	// Or `engine.Subscribe` to run a log running workflow(?)
+	engine.Serve(wf.triggerURL, "body.json containers foo.bar=1", func(ctx d.WorkflowContext) error {
+		event := ctx.Event
+
 		// This send the message "workflow starting!" to the specified Slack channel and GitHub Issue
-		if err := engine.Notify(d.Notification{Text: "workflow starting!"}); err != nil {
+		if err := ctx.Notify(d.Notification{Text: "workflow starting!"}); err != nil {
 			return err
 		}
 
 		// This send the message to ask selecting either "foo" or "bar" in the specified Slack channel and GitHub Issue
-		selectedOption, err := engine.Select(d.Selection{Options: []string{"foo", "bar"}})
+		selectedOption, err := ctx.Select(d.Selection{Options: []string{"foo", "bar"}})
 		if err != nil {
 			return err
 		}
@@ -76,18 +79,30 @@ func (wf *myBespokeWorkflow) Run(engine *d.WorkflowEngine) error {
 			fmt.Printf("selected: %s\n", fooOrBar)
 		}
 
-		// Run local commands with codeskyblue/go-sh
-		if err := sh.Command("echo", "hello\tworld").Command("cut", "-f2").Run(); err != nil {
-			log.Fatal(err)
-		}
+		_, err := ctx.RunJob("runLocalCmd1", func(ctx d.WorkflowContext) error {
+			// Run local commands with codeskyblue/go-sh
+			if err := ctx.Command("echo", "hello\tworld").Command("cut", "-f2").Run(); err != nil {
+				log.Fatal(err)
+			}x
 
-		// Create a new Kubernetes pod and run a command in it
-		if err := sh.Command("kubectl", "run", "--restart=Never", "--image", "alpine:3.9", "myalpinerunner", "--", "sleep", "1000").Run(); err != nil {
-			log.Fatal(err)
-		}
+			// Create a new Kubernetes pod and run a command in it
+			if err := ctx.Command("kubectl", "run", "--restart=Never", "--image", "alpine:3.9", "myalpinerunner", "--", "sleep", "1000").Run(); err != nil {
+				log.Fatal(err)
+			}
 
-		// Run a command in the already running pod w/ kubectl-iexec(https://github.com/gabeduke/kubectl-iexec)
-		if err := sh.Command("kubectl", "iexec", "myalpinerunner", "cat", "/etc/hosts"); err != nil {
+			return nil
+		})
+
+		_, err := ctx.RunJob("runRemoteCmd1", func(ctx d.WorkflowContext) (*d.Output, error) {
+			// Run a command in the already running pod w/ kubectl-iexec(https://github.com/gabeduke/kubectl-iexec)
+			out, err := ctx.Command("kubectl", "iexec", "myalpinerunner", "cat", "/etc/hosts").Output()
+			if err != nil {
+				return nil, err
+			}
+			return &d.Output{Body: []byte(out)}, nil
+		})
+
+		if err != nil {
 			log.Fatal(err)
 		}
 	})
